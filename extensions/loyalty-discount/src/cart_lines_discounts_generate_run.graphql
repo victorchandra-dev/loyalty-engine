@@ -1,0 +1,21 @@
+query CartInput {
+  cart {
+    buyerIdentity {
+      customer {
+        amountSpent {
+          amount
+          currencyCode
+        }
+        numberOfOrders
+      }
+    }
+  }
+  shop {
+    metafield(namespace: "$app", key: "loyalty_program_snapshot") {
+      jsonValue
+    }
+  }
+  discount {
+    discountClasses
+  }
+}

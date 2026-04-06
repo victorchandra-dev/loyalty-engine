@@ -1,0 +1,87 @@
+# Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
+
+client_id = "c5ff65b56ee569153d29aee4bb268fa6"
+name = "Ama Da Flow Loyalty Engine"
+application_url = "https://example.com"
+embedded = true
+
+[build]
+automatically_update_urls_on_dev = true
+include_config_on_deploy = true
+
+[webhooks]
+api_version = "2026-04"
+
+  [[webhooks.subscriptions]]
+  topics = [ "app/uninstalled" ]
+  uri = "/webhooks/app/uninstalled"
+
+  [[webhooks.subscriptions]]
+  topics = [ "app/scopes_update" ]
+  uri = "/webhooks/app/scopes_update"
+
+  [[webhooks.subscriptions]]
+  topics = [ "orders/paid" ]
+  uri = "/webhooks/orders-paid"
+
+  [[webhooks.subscriptions]]
+  topics = [ "metaobjects/create", "metaobjects/update", "metaobjects/delete" ]
+  uri = "/webhooks/metaobjects"
+  filter = "type:loyalty_reward_tier OR type:loyalty_reward_benefit"
+
+[access_scopes]
+# Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
+scopes = "read_customers,write_customers,read_orders,read_discounts,write_discounts,read_metaobjects,write_metaobjects,read_metaobject_definitions,write_metaobject_definitions"
+optional_scopes = [ ]
+use_legacy_install_flow = false
+
+[auth]
+redirect_urls = [ ]
+
+[shop.metafields.app.loyalty_program_snapshot]
+type = "json"
+name = "Loyalty Program Snapshot"
+description = "Normalized loyalty program derived from merchant-managed metaobjects"
+
+  [shop.metafields.app.loyalty_program_snapshot.access]
+  admin = "merchant_read"
+
+[shop.metafields.app.loyalty_program_issues]
+type = "json"
+name = "Loyalty Program Issues"
+description = "Validation issues detected while resolving the loyalty program"
+
+  [shop.metafields.app.loyalty_program_issues.access]
+  admin = "merchant_read"
+
+[shop.metafields.app.loyalty_program_synced_at]
+type = "date_time"
+name = "Loyalty Program Synced At"
+description = "Last time the loyalty program snapshot was synced by the app"
+
+  [shop.metafields.app.loyalty_program_synced_at.access]
+  admin = "merchant_read"
+
+[shop.metafields.app.loyalty_discount_id]
+type = "single_line_text_field"
+name = "Loyalty Discount ID"
+description = "Persistent automatic app discount identifier managed by the loyalty engine"
+
+  [shop.metafields.app.loyalty_discount_id.access]
+  admin = "merchant_read"
+
+[customer.metafields.app.loyalty_state]
+type = "json"
+name = "Loyalty State"
+description = "Derived loyalty state for the customer, managed by the loyalty engine"
+
+  [customer.metafields.app.loyalty_state.access]
+  admin = "merchant_read"
+
+[customer.metafields.app.loyalty_points_balance]
+type = "number_integer"
+name = "Loyalty Points Balance"
+description = "Derived points balance reserved for future loyalty mechanics"
+
+  [customer.metafields.app.loyalty_points_balance.access]
+  admin = "merchant_read"

@@ -1,0 +1,226 @@
+export const CUSTOMER_SPEND_QUERY = `#graphql
+  query LoyaltyCustomerSpend($id: ID!) {
+    customer(id: $id) {
+      id
+      amountSpent {
+        amount
+        currencyCode
+      }
+      numberOfOrders
+    }
+  }
+` as const;
+
+export const CUSTOMERS_PAGE_QUERY = `#graphql
+  query LoyaltyCustomersPage($first: Int!, $after: String) {
+    customers(first: $first, after: $after, sortKey: ID) {
+      nodes {
+        id
+        amountSpent {
+          amount
+          currencyCode
+        }
+        numberOfOrders
+      }
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+    }
+  }
+` as const;
+
+export const METAFIELDS_SET_MUTATION = `#graphql
+  mutation LoyaltyMetafieldsSet($metafields: [MetafieldsSetInput!]!) {
+    metafieldsSet(metafields: $metafields) {
+      metafields {
+        id
+        namespace
+        key
+      }
+      userErrors {
+        field
+        message
+      }
+    }
+  }
+` as const;
+
+export const LOYALTY_PROGRAM_ADMIN_QUERY = `#graphql
+  query LoyaltyProgramAdminState {
+    shop {
+      id
+      currencyCode
+      discountId: metafield(namespace: "$app", key: "loyalty_discount_id") {
+        value
+      }
+    }
+    tierDefinition: metaobjectDefinitionByType(type: "loyalty_reward_tier") {
+      id
+      name
+      type
+      displayNameKey
+      access {
+        admin
+        storefront
+      }
+      fieldDefinitions {
+        key
+        name
+        type {
+          name
+        }
+      }
+    }
+    benefitDefinition: metaobjectDefinitionByType(type: "loyalty_reward_benefit") {
+      id
+      name
+      type
+      displayNameKey
+      access {
+        admin
+        storefront
+      }
+      fieldDefinitions {
+        key
+        name
+        type {
+          name
+        }
+      }
+    }
+    tierDefinitions: metaobjects(type: "loyalty_reward_tier", first: 100) {
+      nodes {
+        id
+        handle
+        type
+        fields {
+          key
+          value
+        }
+      }
+    }
+    benefitDefinitions: metaobjects(type: "loyalty_reward_benefit", first: 100) {
+      nodes {
+        id
+        handle
+        type
+        fields {
+          key
+          value
+        }
+      }
+    }
+  }
+` as const;
+
+export const DISCOUNT_AUTOMATIC_APP_CREATE_MUTATION = `#graphql
+  mutation LoyaltyAutomaticDiscountCreate($automaticAppDiscount: DiscountAutomaticAppInput!) {
+    discountAutomaticAppCreate(automaticAppDiscount: $automaticAppDiscount) {
+      automaticAppDiscount {
+        discountId
+        title
+        status
+      }
+      userErrors {
+        field
+        message
+      }
+    }
+  }
+` as const;
+
+export const DISCOUNT_AUTOMATIC_APP_UPDATE_MUTATION = `#graphql
+  mutation LoyaltyAutomaticDiscountUpdate($id: ID!, $automaticAppDiscount: DiscountAutomaticAppInput!) {
+    discountAutomaticAppUpdate(id: $id, automaticAppDiscount: $automaticAppDiscount) {
+      automaticAppDiscount {
+        discountId
+        title
+        status
+      }
+      userErrors {
+        field
+        message
+      }
+    }
+  }
+` as const;
+
+export const METAOBJECT_DEFINITION_CREATE_MUTATION = `#graphql
+  mutation LoyaltyMetaobjectDefinitionCreate($definition: MetaobjectDefinitionCreateInput!) {
+    metaobjectDefinitionCreate(definition: $definition) {
+      metaobjectDefinition {
+        id
+        name
+        type
+        displayNameKey
+        fieldDefinitions {
+          key
+          name
+          type {
+            name
+          }
+        }
+      }
+      userErrors {
+        field
+        message
+        code
+      }
+    }
+  }
+` as const;
+
+export const METAOBJECT_DEFINITION_UPDATE_MUTATION = `#graphql
+  mutation LoyaltyMetaobjectDefinitionUpdate($id: ID!, $definition: MetaobjectDefinitionUpdateInput!) {
+    metaobjectDefinitionUpdate(id: $id, definition: $definition) {
+      metaobjectDefinition {
+        id
+        name
+        type
+        displayNameKey
+        fieldDefinitions {
+          key
+          name
+          type {
+            name
+          }
+        }
+      }
+      userErrors {
+        field
+        message
+        code
+      }
+    }
+  }
+` as const;
+
+export const METAOBJECT_UPSERT_MUTATION = `#graphql
+  mutation LoyaltyMetaobjectUpsert($handle: MetaobjectHandleInput!, $metaobject: MetaobjectUpsertInput!) {
+    metaobjectUpsert(handle: $handle, metaobject: $metaobject) {
+      metaobject {
+        id
+        handle
+      }
+      userErrors {
+        field
+        message
+        code
+      }
+    }
+  }
+` as const;
+
+export const METAOBJECT_DELETE_MUTATION = `#graphql
+  mutation LoyaltyMetaobjectDelete($id: ID!) {
+    metaobjectDelete(id: $id) {
+      deletedId
+      userErrors {
+        field
+        message
+        code
+      }
+    }
+  }
+` as const;
