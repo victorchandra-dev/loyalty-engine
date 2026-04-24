@@ -55,9 +55,38 @@ gcloud services enable \
   cloudbuild.googleapis.com
 ```
 
-## 3. Create Cloud SQL Postgres
+## 3. Create the Postgres database
 
-> If your org enforces `constraints/sql.restrictPublicIp`, use **3a + 3b (private IP)** below. Otherwise use **3c (public IP)** — simpler, no VPC setup.
+> Three options. Pick based on your org's GCP policies and project stage.
+>
+> - **Option N (Neon)**: External managed Postgres, free tier. Best for POC / fastest setup / if your GCP org blocks public IPs on Cloud SQL. Skip `3a/3b/3c` entirely and jump to [Neon setup](#option-n-neon-external-postgres).
+> - **Options 3a + 3b (Cloud SQL private IP)**: Stays in GCP, needs VPC peering. Required if `constraints/sql.restrictPublicIp` is enforced.
+> - **Option 3c (Cloud SQL public IP)**: Simplest GCP-native path. Blocked by many org policies.
+
+### Option N. Neon external Postgres
+
+1. Sign up at **<https://neon.tech>** (Google SSO works).
+2. Create a project — pick region closest to your Cloud Run region (e.g. Singapore AWS `ap-southeast-1` pairs well with Cloud Run `asia-southeast1`).
+3. Postgres version 16.
+4. In the Neon dashboard, open **Connection Details**. You will see TWO endpoints for your project:
+   - **Pooled connection** — host contains `-pooler` (e.g. `ep-xxxxx-pooler.ap-southeast-1.aws.neon.tech`). Required for serverless runtime.
+   - **Direct connection** — host WITHOUT `-pooler` (e.g. `ep-xxxxx.ap-southeast-1.aws.neon.tech`). Required for migrations.
+
+5. Copy **both** strings and construct two secrets with the following exact query parameters:
+
+   ```text
+   # DATABASE_URL — pooled, used by the running app (Prisma Client)
+   postgresql://USER:PASSWORD@ep-xxxxx-pooler.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&pgbouncer=true&connection_limit=1
+
+   # DIRECT_DATABASE_URL — unpooled, used ONLY by `prisma migrate deploy`
+   postgresql://USER:PASSWORD@ep-xxxxx.ap-southeast-1.aws.neon.tech/neondb?sslmode=require
+   ```
+
+   > **Why both are mandatory:** PgBouncer transaction pooling (what Neon's pooled endpoint uses) breaks prepared statements and DDL. Without `pgbouncer=true&connection_limit=1` on the pooled URL, Prisma's queries will intermittently fail in a way that looks like "the session wasn't saved." Running migrations against the pooled URL can partially apply DDL and leave the schema inconsistent. This is documented behavior — see Prisma's Neon guide.
+
+6. Skip steps 3a/3b/3c and step 4. Jump to step 5 with these two connection strings.
+7. In step 6, use the Neon variant of the deploy command (below) — no Cloud SQL flags.
+
 
 ### 3a. VPC peering (only needed for private IP path)
 
@@ -150,7 +179,7 @@ echo "Private IP: $PG_PRIVATE_IP"
 # Shopify API secret — paste the secret, Enter, then Ctrl+D
 gcloud secrets create SHOPIFY_API_SECRET --data-file=-
 
-# DATABASE_URL — two forms depending on which path you took
+# DATABASE_URL — three forms depending on which path you took
 
 # PUBLIC IP path (3c): Unix socket via Cloud SQL Auth Proxy
 printf 'postgresql://postgres:YOUR_PG_PASSWORD@localhost/loyalty?host=/cloudsql/%s' "$INSTANCE_CONN" \
@@ -159,6 +188,12 @@ printf 'postgresql://postgres:YOUR_PG_PASSWORD@localhost/loyalty?host=/cloudsql/
 # PRIVATE IP path (3a/3b): direct TCP to the private IP
 printf 'postgresql://postgres:YOUR_PG_PASSWORD@%s:5432/loyalty' "$PG_PRIVATE_IP" \
   | gcloud secrets create DATABASE_URL --data-file=-
+
+# NEON path (Option N): TWO secrets — pooled for runtime, direct for migrations
+printf 'postgresql://USER:PASSWORD@ep-xxxxx-pooler.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&pgbouncer=true&connection_limit=1' \
+  | gcloud secrets create DATABASE_URL --data-file=-
+printf 'postgresql://USER:PASSWORD@ep-xxxxx.ap-southeast-1.aws.neon.tech/neondb?sslmode=require' \
+  | gcloud secrets create DIRECT_DATABASE_URL --data-file=-
 
 # Verify both exist
 gcloud secrets list
@@ -197,6 +232,30 @@ gcloud run deploy amadaflow-loyalty \
   --timeout=60 \
   --port=8080
 ```
+
+### Neon path (Option N) — no Cloud SQL, simplest
+
+```bash
+cd apps/loyalty-engine
+
+gcloud run deploy amadaflow-loyalty \
+  --source . \
+  --region=asia-southeast1 \
+  --platform=managed \
+  --allow-unauthenticated \
+  --set-env-vars="^##^SHOPIFY_API_KEY=c5ff65b56ee569153d29aee4bb268fa6##SCOPES=read_customers,write_customers,read_orders,read_discounts,write_discounts,read_metaobjects,write_metaobjects,read_metaobject_definitions,write_metaobject_definitions" \
+  --update-secrets="SHOPIFY_API_SECRET=SHOPIFY_API_SECRET:latest,DATABASE_URL=DATABASE_URL:latest,DIRECT_DATABASE_URL=DIRECT_DATABASE_URL:latest" \
+  --min-instances=0 \
+  --max-instances=3 \
+  --cpu=1 \
+  --memory=512Mi \
+  --timeout=60 \
+  --port=8080
+```
+
+Neon Postgres is reached over normal HTTPS egress — no VPC or Cloud SQL flags needed.
+
+> **Verify the fix after deploy.** See the new "Verifying Neon session writes" section below before calling the deploy done.
 
 ### Private IP path (3a/3b) — Direct VPC Egress
 
@@ -288,6 +347,20 @@ Expected log sequence on first request:
 ```
 
 Save a tier in the admin UI. On the storefront side, visit `https://amadaflow.com/account/loyalty` — it should reflect the saved tier.
+
+## 9a. Verifying Neon session writes (REQUIRED after first Neon deploy)
+
+After the admin UI renders, session rows must have been written to Neon. Verify:
+
+```sql
+-- From Neon SQL Editor (dashboard → SQL Editor) or psql:
+SELECT id, shop, "isOnline", "accessToken" IS NOT NULL AS has_token, expires
+FROM "Session"
+WHERE shop = 'adf-internal.myshopify.com'
+ORDER BY expires DESC NULLS LAST;
+```
+
+**Expected:** at least one row with `has_token = true`. If zero rows, `pgbouncer=true&connection_limit=1` is missing from `DATABASE_URL` — revisit step 5.
 
 ## Redeploying after code changes
 
