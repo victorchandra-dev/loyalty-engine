@@ -1,3 +1,10 @@
 .cache
 build
 node_modules
+.env
+.env.*
+.shopify
+shopify-app.session.sqlite
+shopify-app.session.sqlite-*
+database.sqlite
+.react-router

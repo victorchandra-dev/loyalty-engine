@@ -180,6 +180,7 @@ export default function Index() {
     <s-page heading="Loyalty Engine">
       <s-button
         slot="primary-action"
+        variant="primary"
         onClick={saveTiers}
         {...(saveFetcher.state !== 'idle' ? {loading: true} : {})}
       >
@@ -190,13 +191,12 @@ export default function Index() {
         <s-paragraph>
           Manage the spend tiers, the automatic loyalty discount, and customer
           level synchronization from one place. Saving tiers writes directly to
-          the merchant-owned
-          <s-text> loyalty_reward_tier </s-text>
-          entries for the current store and then refreshes the normalized app
-          snapshot.
+          the merchant-owned{' '}
+          <s-text>loyalty_reward_tier</s-text> entries for the
+          current store and then refreshes the normalized app snapshot.
         </s-paragraph>
 
-        <div style={styles.actionGrid}>
+        <s-grid gridTemplateColumns="repeat(auto-fit, minmax(240px, 1fr))" gap="base">
           <ActionCard
             title="Initialize default program"
             description="Create the loyalty metaobject definitions if they are missing, seed the starter tiers, and ensure the app discount owner exists."
@@ -218,7 +218,7 @@ export default function Index() {
             onAction={syncCustomers}
             loading={customerSyncFetcher.state !== 'idle'}
           />
-        </div>
+        </s-grid>
       </s-section>
 
       <s-section heading="Tier editor">
@@ -228,172 +228,179 @@ export default function Index() {
           checkout discount logic.
         </s-paragraph>
 
-        <div style={styles.editorGrid}>
+        <s-stack direction="block" gap="base">
           {tiers.map((tier, index) => (
-            <div key={tier.clientId} style={styles.tierCard}>
-              <div style={styles.cardHeader}>
-                <div>
-                  <div style={styles.eyebrow}>Tier {index + 1}</div>
-                  <div style={styles.handleText}>
+            <s-section key={tier.clientId}>
+              <s-stack
+                direction="inline"
+                alignItems="start"
+                justifyContent="space-between"
+                gap="base"
+              >
+                <s-stack direction="block" gap="small">
+                  <s-heading>Tier {index + 1}</s-heading>
+                  <s-text color="subdued">
                     Handle: {tier.handle || 'generated on save'}
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  style={styles.removeButton}
+                  </s-text>
+                </s-stack>
+                <s-button
+                  variant="tertiary"
+                  tone="critical"
                   onClick={() => removeTierDraft(tier.clientId, setTiers)}
-                  disabled={tiers.length === 1}
+                  {...(tiers.length === 1 ? {disabled: true} : {})}
                 >
                   Remove
-                </button>
-              </div>
+                </s-button>
+              </s-stack>
 
-              <label style={styles.field}>
-                <span style={styles.fieldLabel}>Level label</span>
-                <input
-                  value={tier.label}
-                  onChange={(event) =>
-                    updateTierDraft(setTiers, tier.clientId, {
-                      label: event.target.value,
-                    })
-                  }
-                  style={styles.input}
-                  placeholder="Gold"
-                />
-              </label>
+              <s-text-field
+                label="Level label"
+                value={tier.label}
+                placeholder="Gold"
+                onChange={(event: any) =>
+                  updateTierDraft(setTiers, tier.clientId, {
+                    label: event.currentTarget.value,
+                  })
+                }
+              />
 
-              <label style={styles.field}>
-                <span style={styles.fieldLabel}>Minimum spend</span>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={tier.minimumSpend}
-                  onChange={(event) =>
-                    updateTierDraft(setTiers, tier.clientId, {
-                      minimumSpend: event.target.value,
-                    })
-                  }
-                  style={styles.input}
-                  placeholder="300"
-                />
-              </label>
+              <s-number-field
+                label="Minimum spend"
+                value={tier.minimumSpend}
+                placeholder="300"
+                min={0}
+                step={0.01}
+                onChange={(event: any) =>
+                  updateTierDraft(setTiers, tier.clientId, {
+                    minimumSpend: event.currentTarget.value,
+                  })
+                }
+              />
 
-              <label style={styles.field}>
-                <span style={styles.fieldLabel}>Discount percentage</span>
-                <input
-                  type="number"
-                  min="0"
-                  max="100"
-                  step="0.01"
-                  value={tier.discountPercentage}
-                  onChange={(event) =>
-                    updateTierDraft(setTiers, tier.clientId, {
-                      discountPercentage: event.target.value,
-                    })
-                  }
-                  style={styles.input}
-                  placeholder="5"
-                />
-              </label>
-            </div>
+              <s-number-field
+                label="Discount percentage"
+                value={tier.discountPercentage}
+                placeholder="5"
+                min={0}
+                max={100}
+                step={0.01}
+                onChange={(event: any) =>
+                  updateTierDraft(setTiers, tier.clientId, {
+                    discountPercentage: event.currentTarget.value,
+                  })
+                }
+              />
+            </s-section>
           ))}
-        </div>
+        </s-stack>
 
-        <div style={styles.editorActions}>
-          <button
-            type="button"
-            style={styles.secondaryButton}
-            onClick={() => setTiers((current) => [...current, createEmptyTierDraft(current.length)])}
+        <s-stack
+          direction="inline"
+          alignItems="center"
+          justifyContent="space-between"
+          gap="base"
+        >
+          <s-button
+            variant="secondary"
+            onClick={() =>
+              setTiers((current) => [
+                ...current,
+                createEmptyTierDraft(current.length),
+              ])
+            }
           >
             Add tier
-          </button>
-          <div style={styles.helperText}>
+          </s-button>
+          <s-text color="subdued">
             Saving tiers also refreshes the single automatic loyalty discount
             owner managed by this app.
-          </div>
-        </div>
+          </s-text>
+        </s-stack>
       </s-section>
 
       <s-section heading="Current status">
-        <div style={styles.statusGrid}>
+        <s-grid gridTemplateColumns="repeat(auto-fit, minmax(220px, 1fr))" gap="base">
           <StatusCard
             title="Tier definition"
+            ready={!!data.definitions.tier}
             lines={[
-              `Ready: ${data.definitions.tier ? 'Yes' : 'No'}`,
-              `Storefront access: ${data.definitions.tier?.access?.storefront ?? 'Not configured'}`,
-              `Display name key: ${data.definitions.tier?.displayNameKey ?? 'Not configured'}`,
-              `Fields: ${data.definitions.tier?.fieldDefinitions.length ?? 0}`,
+              ['Storefront access', data.definitions.tier?.access?.storefront ?? 'Not configured'],
+              ['Display name key', data.definitions.tier?.displayNameKey ?? 'Not configured'],
+              ['Fields', String(data.definitions.tier?.fieldDefinitions.length ?? 0)],
             ]}
           />
           <StatusCard
             title="Benefit definition"
+            ready={!!data.definitions.benefit}
             lines={[
-              `Ready: ${data.definitions.benefit ? 'Yes' : 'No'}`,
-              `Storefront access: ${data.definitions.benefit?.access?.storefront ?? 'Not configured'}`,
-              `Display name key: ${data.definitions.benefit?.displayNameKey ?? 'Not configured'}`,
-              `Fields: ${data.definitions.benefit?.fieldDefinitions.length ?? 0}`,
+              ['Storefront access', data.definitions.benefit?.access?.storefront ?? 'Not configured'],
+              ['Display name key', data.definitions.benefit?.displayNameKey ?? 'Not configured'],
+              ['Fields', String(data.definitions.benefit?.fieldDefinitions.length ?? 0)],
             ]}
           />
           <StatusCard
             title="Program resolution"
+            ready={data.hasProgram}
             lines={[
-              `Currency: ${data.currencyCode}`,
-              `Tier entries found: ${data.sourceCounts.tiers}`,
-              `Benefit entries found: ${data.sourceCounts.benefits}`,
-              `Program resolved: ${data.hasProgram ? 'Yes' : 'No'}`,
+              ['Currency', data.currencyCode],
+              ['Tier entries found', String(data.sourceCounts.tiers)],
+              ['Benefit entries found', String(data.sourceCounts.benefits)],
             ]}
           />
           <StatusCard
             title="Automatic discount"
+            ready={!!data.currentDiscountId}
             lines={[
-              `Configured: ${data.currentDiscountId ? 'Yes' : 'No'}`,
-              `Discount tiers resolved: ${data.discountConfiguration?.tiers.length ?? 0}`,
-              `Discount id: ${data.currentDiscountId ?? 'Not created yet'}`,
+              ['Discount tiers resolved', String(data.discountConfiguration?.tiers.length ?? 0)],
+              ['Discount id', data.currentDiscountId ?? 'Not created yet'],
             ]}
           />
-        </div>
+        </s-grid>
       </s-section>
 
       <s-section heading="Resolved rewards">
         {data.benefits.length ? (
-          <div style={styles.benefitGrid}>
+          <s-grid gridTemplateColumns="repeat(auto-fit, minmax(220px, 1fr))" gap="base">
             {data.benefits.map((benefit) => (
-              <div key={benefit.handle} style={styles.detailCard}>
-                <div style={styles.detailTitle}>{benefit.displayLabel}</div>
-                <div style={styles.detailLine}>Type: {benefit.type}</div>
-                <div style={styles.detailLine}>Tier handle: {benefit.tierHandle}</div>
-                <div style={styles.detailLine}>
-                  Value: {benefit.value === null ? 'n/a' : benefit.value}
-                </div>
-              </div>
+              <s-section key={benefit.handle}>
+                <s-stack direction="block" gap="small">
+                  <s-heading>{benefit.displayLabel}</s-heading>
+                  <DetailLine label="Type" value={benefit.type} />
+                  <DetailLine label="Tier handle" value={benefit.tierHandle} />
+                  <DetailLine
+                    label="Value"
+                    value={benefit.value === null ? 'n/a' : String(benefit.value)}
+                  />
+                </s-stack>
+              </s-section>
             ))}
-          </div>
+          </s-grid>
         ) : (
           <s-paragraph>
             No explicit reward entries were found yet. The current program
-            derives discount rewards directly from tier entries, and the empty
-            <s-text> loyalty_reward_benefit </s-text>
-            definition is ready for future non-discount perks.
+            derives discount rewards directly from tier entries, and the empty{' '}
+            <s-text>loyalty_reward_benefit</s-text> definition
+            is ready for future non-discount perks.
           </s-paragraph>
         )}
       </s-section>
 
       <s-section heading="Configuration issues">
         {data.issues.length ? (
-          <div style={styles.issueGrid}>
+          <s-stack direction="block" gap="base">
             {data.issues.map((issue) => (
-              <div
+              <s-banner
                 key={`${issue.entryId}:${issue.field}:${issue.message}`}
-                style={styles.issueCard}
+                tone={issue.severity === 'error' ? 'critical' : 'warning'}
+                heading={`${issue.severity.toUpperCase()} · ${issue.field}`}
               >
-                <div style={styles.issueTitle}>{issue.severity.toUpperCase()}</div>
-                <div style={styles.detailLine}>Entry: {issue.entryId}</div>
-                <div style={styles.detailLine}>Field: {issue.field}</div>
-                <div style={styles.detailLine}>{issue.message}</div>
-              </div>
+                <s-stack direction="block" gap="small">
+                  <s-text>Entry: {issue.entryId}</s-text>
+                  <s-text>{issue.message}</s-text>
+                </s-stack>
+              </s-banner>
             ))}
-          </div>
+          </s-stack>
         ) : (
           <s-paragraph>
             No configuration issues were detected in the current loyalty setup.
@@ -432,28 +439,59 @@ function ActionCard({
   loading: boolean;
 }) {
   return (
-    <div style={styles.actionCard}>
-      <div style={styles.detailTitle}>{title}</div>
-      <div style={styles.detailLine}>{description}</div>
-      <div>
+    <s-section>
+      <s-stack direction="block" gap="base">
+        <s-stack direction="block" gap="small">
+          <s-heading>{title}</s-heading>
+          <s-paragraph>{description}</s-paragraph>
+        </s-stack>
         <s-button onClick={onAction} {...(loading ? {loading: true} : {})}>
           {buttonLabel}
         </s-button>
-      </div>
-    </div>
+      </s-stack>
+    </s-section>
   );
 }
 
-function StatusCard({title, lines}: {title: string; lines: string[]}) {
+function StatusCard({
+  title,
+  ready,
+  lines,
+}: {
+  title: string;
+  ready: boolean;
+  lines: [label: string, value: string][];
+}) {
   return (
-    <div style={styles.detailCard}>
-      <div style={styles.detailTitle}>{title}</div>
-      {lines.map((line) => (
-        <div key={line} style={styles.detailLine}>
-          {line}
-        </div>
-      ))}
-    </div>
+    <s-section>
+      <s-stack direction="block" gap="small">
+        <s-stack
+          direction="inline"
+          alignItems="center"
+          justifyContent="space-between"
+          gap="small"
+        >
+          <s-heading>{title}</s-heading>
+          <s-badge tone={ready ? 'success' : 'neutral'}>
+            {ready ? 'Ready' : 'Not ready'}
+          </s-badge>
+        </s-stack>
+        {lines.map(([label, value]) => (
+          <DetailLine key={label} label={label} value={value} />
+        ))}
+      </s-stack>
+    </s-section>
+  );
+}
+
+function DetailLine({label, value}: {label: string; value: string}) {
+  return (
+    <s-stack direction="inline" alignItems="baseline" gap="small">
+      <s-text color="subdued">
+        {label}:
+      </s-text>
+      <s-text>{value}</s-text>
+    </s-stack>
   );
 }
 
@@ -629,149 +667,6 @@ function removeTierDraft(
     return current.filter((tier) => tier.clientId !== clientId);
   });
 }
-
-const styles = {
-  actionGrid: {
-    display: 'grid',
-    gap: '12px',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
-  },
-  actionCard: {
-    display: 'grid',
-    gap: '12px',
-    padding: '16px',
-    border: '1px solid var(--p-color-border-secondary)',
-    borderRadius: '16px',
-    background: 'var(--p-color-bg-surface-secondary)',
-  },
-  editorGrid: {
-    display: 'grid',
-    gap: '12px',
-  },
-  tierCard: {
-    display: 'grid',
-    gap: '12px',
-    padding: '16px',
-    border: '1px solid var(--p-color-border-secondary)',
-    borderRadius: '16px',
-    background:
-      'linear-gradient(180deg, rgba(241, 245, 249, 0.95) 0%, rgba(255, 255, 255, 0.98) 100%)',
-  },
-  cardHeader: {
-    display: 'flex',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    gap: '12px',
-  },
-  eyebrow: {
-    fontSize: '12px',
-    fontWeight: 600,
-    letterSpacing: '0.08em',
-    textTransform: 'uppercase' as const,
-    color: '#64748b',
-  },
-  handleText: {
-    fontSize: '13px',
-    color: '#475569',
-    marginTop: '4px',
-  },
-  field: {
-    display: 'grid',
-    gap: '6px',
-  },
-  fieldLabel: {
-    fontSize: '13px',
-    fontWeight: 600,
-    color: '#0f172a',
-  },
-  input: {
-    width: '100%',
-    padding: '10px 12px',
-    borderRadius: '12px',
-    border: '1px solid #cbd5e1',
-    fontSize: '14px',
-    color: '#0f172a',
-    background: '#ffffff',
-  },
-  removeButton: {
-    border: '1px solid #cbd5e1',
-    borderRadius: '999px',
-    padding: '8px 12px',
-    fontSize: '13px',
-    fontWeight: 600,
-    background: '#ffffff',
-    color: '#0f172a',
-    cursor: 'pointer',
-  },
-  editorActions: {
-    display: 'flex',
-    flexWrap: 'wrap' as const,
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: '12px',
-    marginTop: '16px',
-  },
-  secondaryButton: {
-    border: '1px solid #cbd5e1',
-    borderRadius: '999px',
-    padding: '10px 16px',
-    fontSize: '14px',
-    fontWeight: 600,
-    background: '#ffffff',
-    color: '#0f172a',
-    cursor: 'pointer',
-  },
-  helperText: {
-    fontSize: '13px',
-    color: '#475569',
-  },
-  statusGrid: {
-    display: 'grid',
-    gap: '12px',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-  },
-  benefitGrid: {
-    display: 'grid',
-    gap: '12px',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-  },
-  issueGrid: {
-    display: 'grid',
-    gap: '12px',
-  },
-  issueCard: {
-    display: 'grid',
-    gap: '6px',
-    padding: '16px',
-    borderRadius: '16px',
-    border: '1px solid rgba(239, 68, 68, 0.24)',
-    background: 'rgba(254, 242, 242, 0.9)',
-  },
-  issueTitle: {
-    fontSize: '12px',
-    fontWeight: 700,
-    letterSpacing: '0.08em',
-    textTransform: 'uppercase' as const,
-    color: '#b91c1c',
-  },
-  detailCard: {
-    display: 'grid',
-    gap: '8px',
-    padding: '16px',
-    border: '1px solid var(--p-color-border-secondary)',
-    borderRadius: '16px',
-    background: 'var(--p-color-bg-surface-secondary)',
-  },
-  detailTitle: {
-    fontSize: '15px',
-    fontWeight: 700,
-    color: '#0f172a',
-  },
-  detailLine: {
-    fontSize: '14px',
-    color: '#334155',
-  },
-} as const;
 
 export const headers: HeadersFunction = (headersArgs) => {
   return boundary.headers(headersArgs);

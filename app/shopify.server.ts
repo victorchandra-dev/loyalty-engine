@@ -1,22 +1,16 @@
-import path from 'node:path';
 import '@shopify/shopify-app-react-router/adapters/node';
 import {
   ApiVersion,
   AppDistribution,
   shopifyApp,
 } from '@shopify/shopify-app-react-router/server';
-import {createSessionStorage} from './session-storage.server';
+import {sessionStorage as prismaSessionStorage} from './session-storage.server';
 
 const scopes = process.env.SCOPES
   ? process.env.SCOPES.split(',')
       .map((scope) => scope.trim())
       .filter(Boolean)
   : [];
-
-const sessionDatabasePath = path.join(
-  process.cwd(),
-  'shopify-app.session.sqlite',
-);
 
 const shopify = shopifyApp({
   apiKey: process.env.SHOPIFY_API_KEY,
@@ -25,7 +19,7 @@ const shopify = shopifyApp({
   scopes,
   appUrl: process.env.SHOPIFY_APP_URL || '',
   authPathPrefix: '/auth',
-  sessionStorage: createSessionStorage(sessionDatabasePath),
+  sessionStorage: prismaSessionStorage,
   distribution: AppDistribution.AppStore,
   future: {
     expiringOfflineAccessTokens: true,
