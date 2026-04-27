@@ -2,7 +2,7 @@
 
 client_id = "c5ff65b56ee569153d29aee4bb268fa6"
 name = "Ama Da Flow Loyalty Engine"
-application_url = "https://amadaflow-loyalty-201907146826.asia-southeast1.run.app"
+application_url = "https://amadaflow-loyalty.fly.dev"
 embedded = true
 
 [build]
@@ -40,9 +40,9 @@ use_legacy_install_flow = false
 
 [auth]
 redirect_urls = [
-  "https://amadaflow-loyalty-201907146826.asia-southeast1.run.app/auth/callback",
-  "https://amadaflow-loyalty-201907146826.asia-southeast1.run.app/auth/shopify/callback",
-  "https://amadaflow-loyalty-201907146826.asia-southeast1.run.app/api/auth/callback"
+  "https://amadaflow-loyalty.fly.dev/auth/callback",
+  "https://amadaflow-loyalty.fly.dev/auth/shopify/callback",
+  "https://amadaflow-loyalty.fly.dev/api/auth/callback"
 ]
 
 [shop.metafields.app.loyalty_program_snapshot]
