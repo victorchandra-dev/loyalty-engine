@@ -9,6 +9,16 @@ import {useFetcher, useLoaderData} from 'react-router';
 import {useAppBridge} from '@shopify/app-bridge-react';
 import {boundary} from '@shopify/shopify-app-react-router/server';
 import {
+  ConfigurationIssues,
+  OperationsGrid,
+  OwnershipAside,
+  ProgramHero,
+  ProgramStatus,
+  ResolvedRewards,
+  TierEditor,
+  type TierDraft,
+} from '../components/loyalty-admin-ui';
+import {
   backfillCustomerLoyaltyLevels,
   buildTierEditorEntries,
   initializeLoyaltyProgram,
@@ -19,10 +29,6 @@ import {
 } from '../loyalty/admin.server';
 import {fetchLoyaltyProgramConfiguration} from '../loyalty/program.server';
 import {authenticate} from '../shopify.server';
-
-type TierDraft = LoyaltyTierEditorEntry & {
-  clientId: string;
-};
 
 type ActionData = {
   status: 'success' | 'error';
@@ -187,311 +193,54 @@ export default function Index() {
         Save tiers
       </s-button>
 
-      <s-section heading="Program control center">
-        <s-paragraph>
-          Manage the spend tiers, the automatic loyalty discount, and customer
-          level synchronization from one place. Saving tiers writes directly to
-          the merchant-owned{' '}
-          <s-text>loyalty_reward_tier</s-text> entries for the
-          current store and then refreshes the normalized app snapshot.
-        </s-paragraph>
+      <ProgramHero
+        benefitCount={data.sourceCounts.benefits}
+        currentDiscountId={data.currentDiscountId}
+        hasProgram={data.hasProgram}
+        issueCount={data.issues.length}
+        tierCount={data.sourceCounts.tiers}
+      />
 
-        <s-grid gridTemplateColumns="repeat(auto-fit, minmax(240px, 1fr))" gap="base">
-          <ActionCard
-            title="Initialize default program"
-            description="Create the loyalty metaobject definitions if they are missing, seed the starter tiers, and ensure the app discount owner exists."
-            buttonLabel="Initialize program"
-            onAction={initializeProgram}
-            loading={initializeFetcher.state !== 'idle'}
-          />
-          <ActionCard
-            title="Sync program state"
-            description="Rebuild the normalized shop snapshot and refresh the single automatic discount owner from the current tier configuration."
-            buttonLabel="Sync program"
-            onAction={syncProgram}
-            loading={syncFetcher.state !== 'idle'}
-          />
-          <ActionCard
-            title="Sync customer levels"
-            description="Backfill the current loyalty tier and active rewards into customer app metafields for every customer in the store."
-            buttonLabel="Sync customers"
-            onAction={syncCustomers}
-            loading={customerSyncFetcher.state !== 'idle'}
-          />
-        </s-grid>
-      </s-section>
+      <OperationsGrid
+        customerSyncLoading={customerSyncFetcher.state !== 'idle'}
+        initializeLoading={initializeFetcher.state !== 'idle'}
+        initializeProgram={initializeProgram}
+        syncLoading={syncFetcher.state !== 'idle'}
+        syncCustomers={syncCustomers}
+        syncProgram={syncProgram}
+      />
 
-      <s-section heading="Tier editor">
-        <s-paragraph>
-          The current MVP qualification model is lifetime spend. Adjusting the
-          tiers here updates both the merchant-facing loyalty content and the
-          checkout discount logic.
-        </s-paragraph>
+      <TierEditor
+        currencyCode={data.currencyCode}
+        onAddTier={() =>
+          setTiers((current) => [
+            ...current,
+            createEmptyTierDraft(current.length),
+          ])
+        }
+        onRemoveTier={(clientId) => removeTierDraft(clientId, setTiers)}
+        onUpdateTier={(clientId, patch) =>
+          updateTierDraft(setTiers, clientId, patch)
+        }
+        saving={saveFetcher.state !== 'idle'}
+        tiers={tiers}
+      />
 
-        <s-stack direction="block" gap="base">
-          {tiers.map((tier, index) => (
-            <s-section key={tier.clientId}>
-              <s-stack
-                direction="inline"
-                alignItems="start"
-                justifyContent="space-between"
-                gap="base"
-              >
-                <s-stack direction="block" gap="small">
-                  <s-heading>Tier {index + 1}</s-heading>
-                  <s-text color="subdued">
-                    Handle: {tier.handle || 'generated on save'}
-                  </s-text>
-                </s-stack>
-                <s-button
-                  variant="tertiary"
-                  tone="critical"
-                  onClick={() => removeTierDraft(tier.clientId, setTiers)}
-                  {...(tiers.length === 1 ? {disabled: true} : {})}
-                >
-                  Remove
-                </s-button>
-              </s-stack>
+      <ProgramStatus
+        currencyCode={data.currencyCode}
+        currentDiscountId={data.currentDiscountId}
+        definitions={data.definitions}
+        discountConfiguration={data.discountConfiguration}
+        hasProgram={data.hasProgram}
+        sourceCounts={data.sourceCounts}
+      />
 
-              <s-text-field
-                label="Level label"
-                value={tier.label}
-                placeholder="Gold"
-                onChange={(event: any) =>
-                  updateTierDraft(setTiers, tier.clientId, {
-                    label: event.currentTarget.value,
-                  })
-                }
-              />
+      <ResolvedRewards benefits={data.benefits} />
 
-              <s-number-field
-                label="Minimum spend"
-                value={tier.minimumSpend}
-                placeholder="300"
-                min={0}
-                step={0.01}
-                onChange={(event: any) =>
-                  updateTierDraft(setTiers, tier.clientId, {
-                    minimumSpend: event.currentTarget.value,
-                  })
-                }
-              />
+      <ConfigurationIssues issues={data.issues} />
 
-              <s-number-field
-                label="Discount percentage"
-                value={tier.discountPercentage}
-                placeholder="5"
-                min={0}
-                max={100}
-                step={0.01}
-                onChange={(event: any) =>
-                  updateTierDraft(setTiers, tier.clientId, {
-                    discountPercentage: event.currentTarget.value,
-                  })
-                }
-              />
-            </s-section>
-          ))}
-        </s-stack>
-
-        <s-stack
-          direction="inline"
-          alignItems="center"
-          justifyContent="space-between"
-          gap="base"
-        >
-          <s-button
-            variant="secondary"
-            onClick={() =>
-              setTiers((current) => [
-                ...current,
-                createEmptyTierDraft(current.length),
-              ])
-            }
-          >
-            Add tier
-          </s-button>
-          <s-text color="subdued">
-            Saving tiers also refreshes the single automatic loyalty discount
-            owner managed by this app.
-          </s-text>
-        </s-stack>
-      </s-section>
-
-      <s-section heading="Current status">
-        <s-grid gridTemplateColumns="repeat(auto-fit, minmax(220px, 1fr))" gap="base">
-          <StatusCard
-            title="Tier definition"
-            ready={!!data.definitions.tier}
-            lines={[
-              ['Storefront access', data.definitions.tier?.access?.storefront ?? 'Not configured'],
-              ['Display name key', data.definitions.tier?.displayNameKey ?? 'Not configured'],
-              ['Fields', String(data.definitions.tier?.fieldDefinitions.length ?? 0)],
-            ]}
-          />
-          <StatusCard
-            title="Benefit definition"
-            ready={!!data.definitions.benefit}
-            lines={[
-              ['Storefront access', data.definitions.benefit?.access?.storefront ?? 'Not configured'],
-              ['Display name key', data.definitions.benefit?.displayNameKey ?? 'Not configured'],
-              ['Fields', String(data.definitions.benefit?.fieldDefinitions.length ?? 0)],
-            ]}
-          />
-          <StatusCard
-            title="Program resolution"
-            ready={data.hasProgram}
-            lines={[
-              ['Currency', data.currencyCode],
-              ['Tier entries found', String(data.sourceCounts.tiers)],
-              ['Benefit entries found', String(data.sourceCounts.benefits)],
-            ]}
-          />
-          <StatusCard
-            title="Automatic discount"
-            ready={!!data.currentDiscountId}
-            lines={[
-              ['Discount tiers resolved', String(data.discountConfiguration?.tiers.length ?? 0)],
-              ['Discount id', data.currentDiscountId ?? 'Not created yet'],
-            ]}
-          />
-        </s-grid>
-      </s-section>
-
-      <s-section heading="Resolved rewards">
-        {data.benefits.length ? (
-          <s-grid gridTemplateColumns="repeat(auto-fit, minmax(220px, 1fr))" gap="base">
-            {data.benefits.map((benefit) => (
-              <s-section key={benefit.handle}>
-                <s-stack direction="block" gap="small">
-                  <s-heading>{benefit.displayLabel}</s-heading>
-                  <DetailLine label="Type" value={benefit.type} />
-                  <DetailLine label="Tier handle" value={benefit.tierHandle} />
-                  <DetailLine
-                    label="Value"
-                    value={benefit.value === null ? 'n/a' : String(benefit.value)}
-                  />
-                </s-stack>
-              </s-section>
-            ))}
-          </s-grid>
-        ) : (
-          <s-paragraph>
-            No explicit reward entries were found yet. The current program
-            derives discount rewards directly from tier entries, and the empty{' '}
-            <s-text>loyalty_reward_benefit</s-text> definition
-            is ready for future non-discount perks.
-          </s-paragraph>
-        )}
-      </s-section>
-
-      <s-section heading="Configuration issues">
-        {data.issues.length ? (
-          <s-stack direction="block" gap="base">
-            {data.issues.map((issue) => (
-              <s-banner
-                key={`${issue.entryId}:${issue.field}:${issue.message}`}
-                tone={issue.severity === 'error' ? 'critical' : 'warning'}
-                heading={`${issue.severity.toUpperCase()} · ${issue.field}`}
-              >
-                <s-stack direction="block" gap="small">
-                  <s-text>Entry: {issue.entryId}</s-text>
-                  <s-text>{issue.message}</s-text>
-                </s-stack>
-              </s-banner>
-            ))}
-          </s-stack>
-        ) : (
-          <s-paragraph>
-            No configuration issues were detected in the current loyalty setup.
-          </s-paragraph>
-        )}
-      </s-section>
-
-      <s-section slot="aside" heading="What this page owns">
-        <s-unordered-list>
-          <s-list-item>
-            Merchant-owned tier and benefit definitions for loyalty config.
-          </s-list-item>
-          <s-list-item>
-            The single automatic app discount that powers checkout execution.
-          </s-list-item>
-          <s-list-item>
-            Shop snapshot sync and customer loyalty level backfills.
-          </s-list-item>
-        </s-unordered-list>
-      </s-section>
+      <OwnershipAside />
     </s-page>
-  );
-}
-
-function ActionCard({
-  title,
-  description,
-  buttonLabel,
-  onAction,
-  loading,
-}: {
-  title: string;
-  description: string;
-  buttonLabel: string;
-  onAction: () => void;
-  loading: boolean;
-}) {
-  return (
-    <s-section>
-      <s-stack direction="block" gap="base">
-        <s-stack direction="block" gap="small">
-          <s-heading>{title}</s-heading>
-          <s-paragraph>{description}</s-paragraph>
-        </s-stack>
-        <s-button onClick={onAction} {...(loading ? {loading: true} : {})}>
-          {buttonLabel}
-        </s-button>
-      </s-stack>
-    </s-section>
-  );
-}
-
-function StatusCard({
-  title,
-  ready,
-  lines,
-}: {
-  title: string;
-  ready: boolean;
-  lines: [label: string, value: string][];
-}) {
-  return (
-    <s-section>
-      <s-stack direction="block" gap="small">
-        <s-stack
-          direction="inline"
-          alignItems="center"
-          justifyContent="space-between"
-          gap="small"
-        >
-          <s-heading>{title}</s-heading>
-          <s-badge tone={ready ? 'success' : 'neutral'}>
-            {ready ? 'Ready' : 'Not ready'}
-          </s-badge>
-        </s-stack>
-        {lines.map(([label, value]) => (
-          <DetailLine key={label} label={label} value={value} />
-        ))}
-      </s-stack>
-    </s-section>
-  );
-}
-
-function DetailLine({label, value}: {label: string; value: string}) {
-  return (
-    <s-stack direction="inline" alignItems="baseline" gap="small">
-      <s-text color="subdued">
-        {label}:
-      </s-text>
-      <s-text>{value}</s-text>
-    </s-stack>
   );
 }
 
