@@ -13,6 +13,7 @@ import {
   SHOP_LOYALTY_PROGRAM_SYNCED_AT_KEY,
 } from './constants';
 import {adminGraphql, assertNoUserErrors} from './graphql.server';
+import {ensureCustomerLoyaltyStateDefinition} from './customer-state.server';
 
 export type LoyaltyMetaobjectDefinition = {
   id: string;
@@ -93,6 +94,8 @@ export async function fetchLoyaltyProgramConfiguration(admin: AdminApiContext) {
 
 export async function syncShopProgramSnapshot(admin: AdminApiContext) {
   const configuration = await fetchLoyaltyProgramConfiguration(admin);
+
+  await ensureCustomerLoyaltyStateDefinition(admin);
 
   const result = await adminGraphql<MetafieldsSetMutationData>(
     admin,
