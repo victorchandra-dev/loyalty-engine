@@ -2,6 +2,9 @@ import type {AdminApiContext} from '@shopify/shopify-app-react-router/server';
 import {
   CUSTOMER_SPEND_QUERY,
   METAFIELDS_SET_MUTATION,
+  METAFIELD_DEFINITION_BY_KEY_QUERY,
+  METAFIELD_DEFINITION_CREATE_MUTATION,
+  METAFIELD_DEFINITION_UPDATE_MUTATION,
 } from '../../src/integrations/shopify/admin-operations.js';
 import {buildOrdersPaidSyncPlan} from '../../src/webhooks/orders-paid.js';
 import type {LoyaltyProgramConfig} from '../../src/domain/program.js';
@@ -148,4 +151,122 @@ export async function syncCustomerLoyaltyStateFromMetrics({
   );
 
   return plan;
+}
+
+const LOYALTY_STATE_DEFINITION_NAME = 'Loyalty State';
+const LOYALTY_STATE_DEFINITION_DESCRIPTION =
+  'Derived loyalty state for the customer. Maintained by the loyalty engine.';
+const CUSTOMER_ACCOUNT_READ = 'READ';
+
+type MetafieldDefinitionByKeyData = {
+  metafieldDefinitions: {
+    nodes: Array<{
+      id: string;
+      namespace: string;
+      key: string;
+      access: {
+        customerAccount: string | null;
+      } | null;
+    }>;
+  };
+};
+
+type MetafieldDefinitionCreateData = {
+  metafieldDefinitionCreate: {
+    createdDefinition: {id: string; namespace: string; key: string} | null;
+    userErrors: Array<{
+      field?: Array<string | number> | null;
+      message: string;
+      code?: string | null;
+    }>;
+  };
+};
+
+type MetafieldDefinitionUpdateData = {
+  metafieldDefinitionUpdate: {
+    updatedDefinition: {id: string} | null;
+    userErrors: Array<{
+      field?: Array<string | number> | null;
+      message: string;
+      code?: string | null;
+    }>;
+  };
+};
+
+/**
+ * Idempotently ensure the $app.loyalty_state Customer metafield definition
+ * exists and grants Customer Account API READ access. Without this, the
+ * storefront's Customer Account API cannot read the loyalty state.
+ *
+ * Strategy:
+ *  - Query for an existing definition with namespace=$app key=loyalty_state
+ *    on Customer.
+ *  - If absent, create it with customerAccount: READ.
+ *  - If present but access != READ, run a definition update.
+ */
+export async function ensureCustomerLoyaltyStateDefinition(
+  admin: AdminApiContext,
+) {
+  const existing = await adminGraphql<MetafieldDefinitionByKeyData>(
+    admin,
+    METAFIELD_DEFINITION_BY_KEY_QUERY,
+    {
+      namespace: APP_METAFIELD_NAMESPACE,
+      key: CUSTOMER_LOYALTY_STATE_KEY,
+      ownerType: 'CUSTOMER',
+    },
+  );
+
+  const definition = existing.metafieldDefinitions.nodes[0];
+
+  if (!definition) {
+    const created = await adminGraphql<MetafieldDefinitionCreateData>(
+      admin,
+      METAFIELD_DEFINITION_CREATE_MUTATION,
+      {
+        definition: {
+          name: LOYALTY_STATE_DEFINITION_NAME,
+          description: LOYALTY_STATE_DEFINITION_DESCRIPTION,
+          namespace: APP_METAFIELD_NAMESPACE,
+          key: CUSTOMER_LOYALTY_STATE_KEY,
+          type: 'json',
+          ownerType: 'CUSTOMER',
+          access: {
+            customerAccount: CUSTOMER_ACCOUNT_READ,
+          },
+        },
+      },
+    );
+
+    assertNoUserErrors(
+      created.metafieldDefinitionCreate.userErrors,
+      'Failed to create loyalty_state metafield definition',
+    );
+
+    return created.metafieldDefinitionCreate.createdDefinition;
+  }
+
+  if (definition.access?.customerAccount !== CUSTOMER_ACCOUNT_READ) {
+    const updated = await adminGraphql<MetafieldDefinitionUpdateData>(
+      admin,
+      METAFIELD_DEFINITION_UPDATE_MUTATION,
+      {
+        definition: {
+          namespace: APP_METAFIELD_NAMESPACE,
+          key: CUSTOMER_LOYALTY_STATE_KEY,
+          ownerType: 'CUSTOMER',
+          access: {
+            customerAccount: CUSTOMER_ACCOUNT_READ,
+          },
+        },
+      },
+    );
+
+    assertNoUserErrors(
+      updated.metafieldDefinitionUpdate.userErrors,
+      'Failed to update loyalty_state metafield definition access',
+    );
+  }
+
+  return definition;
 }
