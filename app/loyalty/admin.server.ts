@@ -21,7 +21,10 @@ import {
   SHOP_LOYALTY_DISCOUNT_ID_KEY,
 } from './constants';
 import {adminGraphql, assertNoUserErrors} from './graphql.server';
-import {syncCustomerLoyaltyStateFromMetrics} from './customer-state.server';
+import {
+  fetchCustomerPointsState,
+  syncCustomerLoyaltyStateFromMetrics,
+} from './customer-state.server';
 
 const LOYALTY_DISCOUNT_TITLE = 'Loyalty Program Discount';
 const LOYALTY_DISCOUNT_FUNCTION_HANDLE = 'loyalty-discount';
@@ -308,6 +311,20 @@ export async function backfillCustomerLoyaltyLevels(admin: AdminApiContext) {
       const currencyCode =
         customer.amountSpent?.currencyCode ?? configuration.currencyCode;
 
+      // Round-trip the customer's existing points balance and awardedRules so
+      // a backfill doesn't wipe one-shot bonuses already credited (e.g. signup).
+      let pointsBalance = 0;
+      let awardedRules: string[] | undefined;
+      try {
+        const existing = await fetchCustomerPointsState(admin, customer.id);
+        pointsBalance = existing.pointsBalance;
+        if (existing.signupAwarded) {
+          awardedRules = ['signup'];
+        }
+      } catch {
+        // First-time backfill or transient error — fall back to zero.
+      }
+
       await syncCustomerLoyaltyStateFromMetrics({
         admin,
         customerAdminId: customer.id,
@@ -315,6 +332,8 @@ export async function backfillCustomerLoyaltyLevels(admin: AdminApiContext) {
         lifetimeSpend: Number.isFinite(lifetimeSpend) ? lifetimeSpend : 0,
         numberOfOrders: Number(customer.numberOfOrders ?? 0),
         program: configuration.syncPlan.program,
+        pointsBalance,
+        awardedRules,
       });
 
       syncedCustomers += 1;

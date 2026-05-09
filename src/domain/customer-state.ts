@@ -17,16 +17,24 @@ export type CustomerLoyaltyState = {
   qualifiedTierHandles: string[];
   activeBenefitHandles: string[];
   metrics: CustomerMetricSnapshot;
+  /**
+   * Action codes of one-shot earn rules already credited to this customer
+   * (signup, birthday-2026, etc.). Used to prevent double-awarding. Optional
+   * because legacy state records won't have it; missing means "none awarded".
+   */
+  awardedRules?: string[];
 };
 
 export function buildCustomerLoyaltyState({
   computedAt = new Date().toISOString(),
   metrics,
   program,
+  awardedRules,
 }: {
   computedAt?: string;
   metrics: CustomerMetricSnapshot;
   program: LoyaltyProgramConfig;
+  awardedRules?: string[];
 }): CustomerLoyaltyState {
   const qualifiedTiers = getQualifiedTiers(program, metrics);
   const currentTier = qualifiedTiers.at(-1) ?? null;
@@ -41,6 +49,9 @@ export function buildCustomerLoyaltyState({
     qualifiedTierHandles: qualifiedTiers.map((tier) => tier.handle),
     activeBenefitHandles: activeBenefits.map((benefit) => benefit.handle),
     metrics,
+    ...(awardedRules && awardedRules.length > 0
+      ? {awardedRules: [...new Set(awardedRules)]}
+      : {}),
   };
 }
 

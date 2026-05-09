@@ -26,7 +26,7 @@ api_version = "2026-04"
   "metaobjects/update"
 ]
   uri = "/webhooks/metaobjects"
-  filter = "type:loyalty_reward_tier OR type:loyalty_reward_benefit"
+  filter = "type:loyalty_reward_tier OR type:loyalty_reward_benefit OR type:loyalty_earn_rule OR type:loyalty_redemption"
 
   [[webhooks.subscriptions]]
   topics = [ "orders/paid" ]
@@ -77,6 +77,14 @@ description = "Persistent automatic app discount identifier managed by the loyal
   [shop.metafields.app.loyalty_discount_id.access]
   admin = "merchant_read"
 
+[shop.metafields.app.loyalty_program_enabled]
+type = "boolean"
+name = "Loyalty Program Enabled"
+description = "Master on/off toggle for the loyalty program. When false the discount function emits no candidates and the storefront treats the program as paused."
+
+  [shop.metafields.app.loyalty_program_enabled.access]
+  admin = "merchant_read"
+
 [customer.metafields.app.loyalty_state]
 type = "json"
 name = "Loyalty State"
@@ -92,3 +100,13 @@ description = "Derived points balance reserved for future loyalty mechanics"
 
   [customer.metafields.app.loyalty_points_balance.access]
   admin = "merchant_read"
+  customer_account = "read"
+
+[customer.metafields.app.loyalty_active_redemption]
+type = "json"
+name = "Loyalty Active Redemption"
+description = "Pending redemption that the discount function applies at checkout. Set when a customer redeems points; cleared on use or expiry."
+
+  [customer.metafields.app.loyalty_active_redemption.access]
+  admin = "merchant_read"
+  customer_account = "read"

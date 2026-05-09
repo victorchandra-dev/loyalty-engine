@@ -111,6 +111,28 @@ export const LOYALTY_PROGRAM_ADMIN_QUERY = `#graphql
         }
       }
     }
+    earnRuleEntries: metaobjects(type: "loyalty_earn_rule", first: 100) {
+      nodes {
+        id
+        handle
+        type
+        fields {
+          key
+          value
+        }
+      }
+    }
+    redemptionEntries: metaobjects(type: "loyalty_redemption", first: 100) {
+      nodes {
+        id
+        handle
+        type
+        fields {
+          key
+          value
+        }
+      }
+    }
   }
 ` as const;
 

@@ -16,7 +16,9 @@ export type MetaobjectConfigSyncResult = ReturnType<
 export function isLoyaltyConfigMetaobject(payload: MetaobjectWebhookPayload) {
   return (
     payload.type === LOYALTY_METAOBJECT_TYPES.tier ||
-    payload.type === LOYALTY_METAOBJECT_TYPES.benefit
+    payload.type === LOYALTY_METAOBJECT_TYPES.benefit ||
+    payload.type === LOYALTY_METAOBJECT_TYPES.earnRule ||
+    payload.type === LOYALTY_METAOBJECT_TYPES.redemption
   );
 }
 
@@ -24,15 +26,21 @@ export function buildMetaobjectSyncPlan({
   currencyCode,
   tierEntries,
   benefitEntries,
+  earnRuleEntries = [],
+  redemptionEntries = [],
 }: {
   currencyCode: string;
   tierEntries: MerchantMetaobjectEntry[];
   benefitEntries: MerchantMetaobjectEntry[];
+  earnRuleEntries?: MerchantMetaobjectEntry[];
+  redemptionEntries?: MerchantMetaobjectEntry[];
 }) {
   const normalized = normalizeLoyaltyProgram({
     currencyCode,
     tierEntries,
     benefitEntries,
+    earnRuleEntries,
+    redemptionEntries,
   });
 
   if (!normalized.program) {

@@ -34,6 +34,7 @@ export function buildOrdersPaidSyncPlan({
   lifetimeSpend,
   numberOfOrders,
   pointsBalance = 0,
+  awardedRules,
   program,
 }: {
   currencyCode: string;
@@ -41,6 +42,7 @@ export function buildOrdersPaidSyncPlan({
   lifetimeSpend: number;
   numberOfOrders: number;
   pointsBalance?: number;
+  awardedRules?: string[];
   program: LoyaltyProgramConfig;
 }): OrdersPaidSyncPlan {
   const loyaltyState = buildCustomerLoyaltyState({
@@ -50,6 +52,7 @@ export function buildOrdersPaidSyncPlan({
       pointsBalance,
       currencyCode,
     },
+    awardedRules,
     program,
   });
 
@@ -57,4 +60,11 @@ export function buildOrdersPaidSyncPlan({
     customerAdminId,
     loyaltyStateValue: JSON.stringify(loyaltyState),
   };
+}
+
+export function getOrdersPaidOrderAmount(payload: OrdersPaidWebhookPayload) {
+  const raw = payload.current_total_price;
+  if (!raw) return 0;
+  const parsed = Number.parseFloat(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
 }

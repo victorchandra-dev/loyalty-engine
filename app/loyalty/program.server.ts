@@ -14,6 +14,7 @@ import {
 } from './constants';
 import {adminGraphql, assertNoUserErrors} from './graphql.server';
 import {ensureCustomerLoyaltyStateDefinition} from './customer-state.server';
+import {fetchProgramEnabled} from './settings.server';
 
 export type LoyaltyMetaobjectDefinition = {
   id: string;
@@ -49,6 +50,12 @@ type LoyaltyProgramAdminQueryData = {
   benefitDefinitions: {
     nodes: ShopifyMetaobjectNode[];
   };
+  earnRuleEntries: {
+    nodes: ShopifyMetaobjectNode[];
+  };
+  redemptionEntries: {
+    nodes: ShopifyMetaobjectNode[];
+  };
 };
 
 type MetafieldsSetMutationData = {
@@ -74,10 +81,18 @@ export async function fetchLoyaltyProgramConfiguration(admin: AdminApiContext) {
   const benefitEntries = data.benefitDefinitions.nodes.map(
     toMerchantMetaobjectEntry,
   );
+  const earnRuleEntries = (data.earnRuleEntries?.nodes ?? []).map(
+    toMerchantMetaobjectEntry,
+  );
+  const redemptionEntries = (data.redemptionEntries?.nodes ?? []).map(
+    toMerchantMetaobjectEntry,
+  );
   const syncPlan = buildMetaobjectSyncPlan({
     currencyCode: data.shop.currencyCode,
     tierEntries,
     benefitEntries,
+    earnRuleEntries,
+    redemptionEntries,
   });
 
   return {
@@ -88,6 +103,8 @@ export async function fetchLoyaltyProgramConfiguration(admin: AdminApiContext) {
     benefitDefinition: data.benefitDefinition,
     tierEntries,
     benefitEntries,
+    earnRuleEntries,
+    redemptionEntries,
     syncPlan,
   };
 }
@@ -96,6 +113,10 @@ export async function syncShopProgramSnapshot(admin: AdminApiContext) {
   const configuration = await fetchLoyaltyProgramConfiguration(admin);
 
   await ensureCustomerLoyaltyStateDefinition(admin);
+
+  // Surface the on/off toggle inside the snapshot so the discount function
+  // can short-circuit without an extra metafield lookup.
+  const {enabled} = await fetchProgramEnabled(admin);
 
   const result = await adminGraphql<MetafieldsSetMutationData>(
     admin,
@@ -108,6 +129,7 @@ export async function syncShopProgramSnapshot(admin: AdminApiContext) {
           key: SHOP_LOYALTY_PROGRAM_SNAPSHOT_KEY,
           type: 'json',
           value: JSON.stringify({
+            enabled,
             program: configuration.syncPlan.program,
             discountConfiguration: configuration.syncPlan.discountConfiguration,
           }),
