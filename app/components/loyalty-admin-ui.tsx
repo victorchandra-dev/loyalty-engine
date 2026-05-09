@@ -119,15 +119,19 @@ export function ProgramHero({
         <HeroMetric label="Issues" value={String(issueCount)} />
       </div>
 
-      <div className={styles.discountPill}>
-        <span className={styles.pulseDot} />
-        {currentDiscountId ? 'Automatic discount connected' : 'Discount owner pending'}
-      </div>
-      <div className={styles.discountPill}>
-        <span className={styles.pulseDot} />
-        {storefrontWired
-          ? 'Storefront redemption wired'
-          : 'Storefront redemption not yet wired'}
+      <div className={styles.heroPills}>
+        <div className={styles.discountPill}>
+          <span className={styles.pulseDot} />
+          {currentDiscountId
+            ? 'Automatic discount connected'
+            : 'Discount owner pending'}
+        </div>
+        <div className={styles.discountPill}>
+          <span className={styles.pulseDot} />
+          {storefrontWired
+            ? 'Storefront redemption wired'
+            : 'Storefront redemption not yet wired'}
+        </div>
       </div>
     </div>
   );

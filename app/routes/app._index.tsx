@@ -13,7 +13,6 @@ import {
   EarnRuleEditor,
   EarnRulesAndRedemptions,
   OperationsGrid,
-  OwnershipAside,
   ProgramHero,
   ProgramStatus,
   RedemptionEditor,
@@ -507,8 +506,6 @@ export default function Index() {
       />
 
       <ConfigurationIssues issues={data.issues} />
-
-      <OwnershipAside />
     </s-page>
   );
 }

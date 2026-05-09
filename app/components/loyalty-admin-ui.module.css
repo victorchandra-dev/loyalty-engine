@@ -10,7 +10,14 @@
 .hero {
   position: relative;
   display: grid;
-  gap: 0.875rem;
+  /* Side-by-side at desktop: copy on left, metrics on right.
+     Pills row spans full width below.
+     Falls back to stacked at narrow widths via the media query at the bottom. */
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.4fr);
+  grid-template-areas:
+    'copy metrics'
+    'pills pills';
+  gap: 0.875rem 1.5rem;
   overflow: hidden;
   margin-block: 0 0.75rem;
   padding: 1.1rem 1.25rem;
@@ -23,6 +30,7 @@
 }
 
 .heroCopy {
+  grid-area: copy;
   max-width: 44rem;
 }
 
@@ -53,12 +61,15 @@
 }
 
 .heroPills {
+  grid-area: pills;
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
 }
 
 .heroMetrics {
+  grid-area: metrics;
+  align-self: center;
   display: grid;
   /* Denser metric tiles — fit 4–6 across when there is room. */
   grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));
@@ -393,6 +404,14 @@
 }
 
 @media (max-width: 58rem) {
+  .hero {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      'copy'
+      'metrics'
+      'pills';
+  }
+
   .tierEditorShell,
   .tierFields {
     grid-template-columns: 1fr;
