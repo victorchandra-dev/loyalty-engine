@@ -42,7 +42,7 @@ import {
   type LoyaltyRedemptionEditorEntry,
   type LoyaltyRedemptionInput,
 } from '../loyalty/earn-rules-redemptions-admin.server';
-import {fetchProgramEnabled} from '../loyalty/settings.server';
+import {fetchProgramEnabled, setProgramEnabled} from '../loyalty/settings.server';
 import {fetchLoyaltyProgramConfiguration} from '../loyalty/program.server';
 import {authenticate} from '../shopify.server';
 
@@ -54,7 +54,8 @@ type ActionData = {
     | 'saveEarnRules'
     | 'saveRedemptions'
     | 'syncProgram'
-    | 'syncCustomers';
+    | 'syncCustomers'
+    | 'toggleProgram';
   message: string;
   syncedAt: string;
   hasProgram?: boolean;
@@ -63,6 +64,7 @@ type ActionData = {
   earnRuleEditorEntries?: LoyaltyEarnRuleEditorEntry[];
   redemptionEditorEntries?: LoyaltyRedemptionEditorEntry[];
   syncedCustomers?: number;
+  enabled?: boolean;
 };
 
 export const loader = async ({request}: LoaderFunctionArgs) => {
@@ -193,6 +195,20 @@ export const action = async ({request}: ActionFunctionArgs): Promise<ActionData>
           redemptionEditorEntries: result.redemptions,
         };
       }
+      case 'toggleProgram': {
+        const desired = formData.get('enabled') === 'true';
+        const {shopId} = await fetchProgramEnabled(admin);
+        await setProgramEnabled(admin, shopId, desired);
+        return {
+          status: 'success',
+          intent,
+          message: desired
+            ? 'Loyalty program activated.'
+            : 'Loyalty program paused.',
+          syncedAt: new Date().toISOString(),
+          enabled: desired,
+        };
+      }
     }
   } catch (error) {
     return {
@@ -216,6 +232,7 @@ export default function Index() {
   const redemptionsSaveFetcher = useFetcher<ActionData>();
   const syncFetcher = useFetcher<ActionData>();
   const customerSyncFetcher = useFetcher<ActionData>();
+  const toggleFetcher = useFetcher<ActionData>();
   const [tiers, setTiers] = useState(() => toTierDrafts(data.tierEditorTiers));
   const [earnRules, setEarnRules] = useState(() =>
     toEarnRuleDrafts(data.earnRuleEditorEntries),
@@ -230,6 +247,17 @@ export default function Index() {
   useFetcherToast(shopify, redemptionsSaveFetcher);
   useFetcherToast(shopify, syncFetcher);
   useFetcherToast(shopify, customerSyncFetcher);
+  useFetcherToast(shopify, toggleFetcher);
+
+  // Optimistic-state for the toggle so the banner updates without round-trip.
+  const optimisticEnabled =
+    toggleFetcher.formData?.get('enabled') === 'true'
+      ? true
+      : toggleFetcher.formData?.get('enabled') === 'false'
+        ? false
+        : (toggleFetcher.data?.enabled ?? data.enabled);
+  const isToggling =
+    toggleFetcher.state === 'submitting' || toggleFetcher.state === 'loading';
 
   useEffect(() => {
     if (saveFetcher.data?.status === 'success' && saveFetcher.data.tierEditorTiers) {
@@ -305,6 +333,13 @@ export default function Index() {
     redemptionsSaveFetcher.submit(formData, {method: 'POST'});
   };
 
+  const toggleProgram = (enabled: boolean) => {
+    const formData = new FormData();
+    formData.set('intent', 'toggleProgram');
+    formData.set('enabled', enabled ? 'true' : 'false');
+    void toggleFetcher.submit(formData, {method: 'POST'});
+  };
+
   return (
     <s-page heading="Loyalty Engine">
       <s-button
@@ -317,22 +352,42 @@ export default function Index() {
       </s-button>
 
       <s-section>
-        <s-stack direction="block" gap="base">
-          <s-banner
-            tone={data.enabled ? 'success' : 'warning'}
-            heading={
-              data.enabled
-                ? 'App status: Active · Loyalty program: Live mode'
-                : 'App status: Active · Loyalty program: Paused'
-            }
-          >
+        <s-banner
+          tone={optimisticEnabled ? 'success' : 'warning'}
+          heading={
+            optimisticEnabled
+              ? 'App status: Active · Loyalty program: Live mode'
+              : 'App status: Active · Loyalty program: Paused'
+          }
+        >
+          <s-stack direction="block" gap="small">
             <s-paragraph>
-              {data.enabled
+              {optimisticEnabled
                 ? 'Customers earn points on paid orders, and tier + redemption discounts apply automatically at checkout.'
-                : 'The program is paused. Toggle it back on under Settings to resume points awarding and checkout discounts.'}
+                : 'The program is paused. Activate to resume points awarding and checkout discounts.'}
             </s-paragraph>
-          </s-banner>
-        </s-stack>
+            <s-stack direction="inline" gap="small">
+              {optimisticEnabled ? (
+                <s-button
+                  tone="critical"
+                  variant="secondary"
+                  onClick={() => toggleProgram(false)}
+                  {...(isToggling ? {disabled: true} : {})}
+                >
+                  Pause program
+                </s-button>
+              ) : (
+                <s-button
+                  variant="primary"
+                  onClick={() => toggleProgram(true)}
+                  {...(isToggling ? {disabled: true} : {})}
+                >
+                  Activate program
+                </s-button>
+              )}
+            </s-stack>
+          </s-stack>
+        </s-banner>
       </s-section>
 
       <ProgramHero
@@ -488,7 +543,8 @@ function getIntent(formData: FormData): ActionData['intent'] {
     value === 'saveEarnRules' ||
     value === 'saveRedemptions' ||
     value === 'syncProgram' ||
-    value === 'syncCustomers'
+    value === 'syncCustomers' ||
+    value === 'toggleProgram'
   ) {
     return value;
   }

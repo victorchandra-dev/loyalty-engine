@@ -1,24 +1,33 @@
+/* Page-level full-bleed container so dashboards take the full s-page width
+   instead of getting capped at the Polaris content max-width. Apply to any
+   wrapper in JSX with className={styles.pageStack} to expand width. */
+.pageStack {
+  display: grid;
+  gap: 1rem;
+  width: 100%;
+}
+
 .hero {
   position: relative;
   display: grid;
-  gap: 1.5rem;
+  gap: 0.875rem;
   overflow: hidden;
-  margin-block: 0 1rem;
-  padding: 1.5rem;
+  margin-block: 0 0.75rem;
+  padding: 1.1rem 1.25rem;
   border: 1px solid rgba(186, 191, 195, 0.55);
-  border-radius: 1.25rem;
+  border-radius: 1rem;
   background:
-    radial-gradient(circle at top right, rgba(0, 128, 96, 0.13), transparent 32rem),
+    radial-gradient(circle at top right, rgba(0, 128, 96, 0.1), transparent 28rem),
     linear-gradient(135deg, #ffffff 0%, #f7f7f8 100%);
-  box-shadow: 0 1.25rem 3.5rem rgba(32, 34, 35, 0.08);
+  box-shadow: 0 0.875rem 2.5rem rgba(32, 34, 35, 0.06);
 }
 
 .heroCopy {
-  max-width: 42rem;
+  max-width: 44rem;
 }
 
 .eyebrow {
-  margin: 0 0 0.45rem;
+  margin: 0 0 0.35rem;
   color: #6d7175;
   font-size: 0.6875rem;
   font-weight: 700;
@@ -29,27 +38,39 @@
 .heroTitle {
   margin: 0;
   color: #202223;
-  font-size: clamp(1.8rem, 4vw, 3rem);
+  font-size: clamp(1.35rem, 2.5vw, 2.1rem);
   font-weight: 650;
   letter-spacing: 0;
-  line-height: 1.05;
+  line-height: 1.1;
 }
 
 .heroText {
-  max-width: 36rem;
-  margin: 1rem 0 0;
+  max-width: 40rem;
+  margin: 0.5rem 0 0;
   color: #5c5f62;
-  font-size: 0.95rem;
-  line-height: 1.6;
+  font-size: 0.875rem;
+  line-height: 1.5;
 }
 
-.heroMetrics,
+.heroPills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.heroMetrics {
+  display: grid;
+  /* Denser metric tiles — fit 4–6 across when there is room. */
+  grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));
+  gap: 0.625rem;
+}
+
 .statusGrid,
 .rewardGrid,
 .actionGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
-  gap: 0.875rem;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: 0.75rem;
 }
 
 .heroMetric,
@@ -57,21 +78,21 @@
 .rewardCard,
 .actionCard {
   border: 1px solid rgba(186, 191, 195, 0.5);
-  border-radius: 1rem;
+  border-radius: 0.75rem;
   background: rgba(255, 255, 255, 0.88);
-  box-shadow: 0 1rem 2.5rem rgba(32, 34, 35, 0.06);
+  box-shadow: 0 0.5rem 1.5rem rgba(32, 34, 35, 0.04);
 }
 
 .heroMetric {
-  padding: 1rem;
+  padding: 0.65rem 0.75rem;
 }
 
 .heroMetric span,
 .detailLine span,
-.tierPreview span {
+.tierSummary span {
   display: block;
   color: #6d7175;
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   font-weight: 650;
   letter-spacing: 0;
   text-transform: uppercase;
@@ -79,9 +100,10 @@
 
 .heroMetric strong {
   display: block;
-  margin-top: 0.4rem;
+  margin-top: 0.2rem;
   color: #202223;
-  font-size: 1.35rem;
+  font-size: 1.05rem;
+  font-weight: 650;
 }
 
 .discountPill {
@@ -109,8 +131,18 @@
 .actionCard {
   display: grid;
   align-content: space-between;
-  min-height: 13rem;
-  padding: 1.25rem;
+  min-height: 9.5rem;
+  padding: 0.875rem 1rem;
+}
+
+.actionCard h3 {
+  font-size: 0.95rem;
+}
+
+.actionCard p {
+  margin: 0.4rem 0 0.75rem;
+  font-size: 0.8rem;
+  line-height: 1.45;
 }
 
 .actionCard h3,
@@ -136,14 +168,14 @@
 
 .tierEditorShell {
   display: grid;
-  grid-template-columns: minmax(0, 1.45fr) minmax(18rem, 0.75fr);
-  gap: 1rem;
-  margin-top: 1rem;
+  grid-template-columns: minmax(0, 1.5fr) minmax(15rem, 0.65fr);
+  gap: 0.875rem;
+  margin-top: 0.75rem;
 }
 
 .tierCards {
   display: grid;
-  gap: 1rem;
+  gap: 0.625rem;
 }
 
 .tierCard,
@@ -151,16 +183,16 @@
   position: relative;
   overflow: hidden;
   border: 1px solid rgba(186, 191, 195, 0.58);
-  border-radius: 1.25rem;
+  border-radius: 0.875rem;
   background: #ffffff;
-  padding: 1rem;
-  box-shadow: 0 1.25rem 3rem rgba(32, 34, 35, 0.07);
+  padding: 0.85rem 1rem;
+  box-shadow: 0 0.5rem 1.5rem rgba(32, 34, 35, 0.05);
 }
 
 .tierCard::before {
   position: absolute;
   inset: 0 auto 0 0;
-  width: 0.35rem;
+  width: 0.25rem;
   content: '';
 }
 
@@ -168,64 +200,88 @@
 .statusHeader,
 .editorFooter {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  gap: 1rem;
+  gap: 0.75rem;
+}
+
+.tierCardHeader > div:first-child {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+}
+
+.tierCardHeader h3 {
+  font-size: 0.95rem;
+  font-weight: 670;
+}
+
+.tierCardHeader p {
+  margin: 0;
+  color: #8a8f93;
+  font-size: 0.75rem;
 }
 
 .tierBadge {
   display: inline-flex;
-  margin-bottom: 0.75rem;
+  margin-bottom: 0;
   border-radius: 999px;
-  padding: 0.35rem 0.65rem;
+  padding: 0.2rem 0.55rem;
   color: #202223;
-  font-size: 0.68rem;
+  font-size: 0.62rem;
   font-weight: 750;
-  letter-spacing: 0;
+  letter-spacing: 0.02em;
   text-transform: uppercase;
 }
 
 .tierFields {
   display: grid;
-  grid-template-columns: minmax(12rem, 1.2fr) minmax(10rem, 1fr) minmax(10rem, 1fr);
-  gap: 0.75rem;
-  margin-top: 1rem;
+  /* 3 fields side-by-side at any reasonable width. */
+  grid-template-columns: minmax(8rem, 1.4fr) minmax(7rem, 1fr) minmax(6rem, 0.9fr);
+  gap: 0.625rem;
+  margin-top: 0.625rem;
 }
 
-.tierPreview {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.75rem;
-  margin-top: 1rem;
-}
-
-.tierPreview div {
-  border: 1px solid rgba(186, 191, 195, 0.45);
-  border-radius: 0.9rem;
+/* Thin one-line summary that replaces the two large preview tiles. */
+.tierSummary {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.4rem 0.875rem;
+  margin-top: 0.625rem;
+  padding: 0.45rem 0.65rem;
+  border-radius: 0.625rem;
   background: #fafbfb;
-  padding: 0.85rem;
+  border: 1px solid rgba(186, 191, 195, 0.4);
 }
 
-.tierPreview strong {
-  display: block;
-  margin-top: 0.35rem;
+.tierSummary strong {
   color: #202223;
-  font-size: 1rem;
+  font-size: 0.85rem;
+  font-weight: 650;
+}
+
+.tierSummary em {
+  color: #6d7175;
+  font-style: normal;
+  font-size: 0.78rem;
 }
 
 .ladderPanel {
   align-self: start;
   position: sticky;
   top: 1rem;
+  padding: 0.85rem 1rem;
   background:
-    radial-gradient(circle at top right, rgba(250, 201, 168, 0.24), transparent 16rem),
+    radial-gradient(circle at top right, rgba(250, 201, 168, 0.18), transparent 14rem),
     #ffffff;
 }
 
 .ladderTrack {
   display: grid;
-  gap: 0.8rem;
-  margin-top: 1rem;
+  gap: 0.55rem;
+  margin-top: 0.65rem;
 }
 
 .ladderRow {

@@ -616,7 +616,7 @@ function TierCard({
         <div>
           <span className={styles.tierBadge}>{visual.label}</span>
           <h3>{tier.label || `Tier ${index + 1}`}</h3>
-          <p>Handle: {tier.handle || 'generated on save'}</p>
+          <p>{tier.handle || 'handle on save'}</p>
         </div>
         <s-button
           tone="critical"
@@ -638,7 +638,7 @@ function TierCard({
           }
         />
         <s-number-field
-          label="Minimum spend"
+          label="Min. spend"
           min={0}
           placeholder="300"
           step={0.01}
@@ -648,7 +648,7 @@ function TierCard({
           }
         />
         <s-number-field
-          label="Discount percentage"
+          label="Discount %"
           max={100}
           min={0}
           placeholder="5"
@@ -660,15 +660,14 @@ function TierCard({
         />
       </div>
 
-      <div className={styles.tierPreview}>
-        <PreviewMetric
-          label="Unlocks at"
-          value={spend === null ? '--' : formatCurrency(spend, currencyCode)}
-        />
-        <PreviewMetric
-          label="Checkout reward"
-          value={discount === null ? '--' : `${discount}% off`}
-        />
+      <div className={styles.tierSummary}>
+        <em>Unlocks at</em>
+        <strong>
+          {spend === null ? '—' : formatCurrency(spend, currencyCode)}
+        </strong>
+        <em>·</em>
+        <em>Checkout reward</em>
+        <strong>{discount === null ? '—' : `${discount}% off`}</strong>
       </div>
     </div>
   );
