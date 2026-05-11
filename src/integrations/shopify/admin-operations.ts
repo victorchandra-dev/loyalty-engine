@@ -89,6 +89,40 @@ export const LOYALTY_PROGRAM_ADMIN_QUERY = `#graphql
         }
       }
     }
+    earnRuleDefinition: metaobjectDefinitionByType(type: "loyalty_earn_rule") {
+      id
+      name
+      type
+      displayNameKey
+      access {
+        admin
+        storefront
+      }
+      fieldDefinitions {
+        key
+        name
+        type {
+          name
+        }
+      }
+    }
+    redemptionDefinition: metaobjectDefinitionByType(type: "loyalty_redemption") {
+      id
+      name
+      type
+      displayNameKey
+      access {
+        admin
+        storefront
+      }
+      fieldDefinitions {
+        key
+        name
+        type {
+          name
+        }
+      }
+    }
     tierDefinitions: metaobjects(type: "loyalty_reward_tier", first: 100) {
       nodes {
         id

@@ -44,6 +44,8 @@ type LoyaltyProgramAdminQueryData = {
   };
   tierDefinition: LoyaltyMetaobjectDefinition | null;
   benefitDefinition: LoyaltyMetaobjectDefinition | null;
+  earnRuleDefinition: LoyaltyMetaobjectDefinition | null;
+  redemptionDefinition: LoyaltyMetaobjectDefinition | null;
   tierDefinitions: {
     nodes: ShopifyMetaobjectNode[];
   };
@@ -101,6 +103,8 @@ export async function fetchLoyaltyProgramConfiguration(admin: AdminApiContext) {
     currentDiscountId: data.shop.discountId?.value ?? null,
     tierDefinition: data.tierDefinition,
     benefitDefinition: data.benefitDefinition,
+    earnRuleDefinition: data.earnRuleDefinition,
+    redemptionDefinition: data.redemptionDefinition,
     tierEntries,
     benefitEntries,
     earnRuleEntries,

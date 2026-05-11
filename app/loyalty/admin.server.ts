@@ -193,6 +193,79 @@ const LOYALTY_DEFINITION_BLUEPRINTS: DefinitionBlueprint[] = [
       },
     ],
   },
+  {
+    type: LOYALTY_METAOBJECT_TYPES.earnRule,
+    name: 'Loyalty Earn Rule',
+    description:
+      'Actions that award loyalty points (signup, order, birthday, review, referral, …).',
+    displayNameKey: 'title',
+    fieldDefinitions: [
+      {
+        key: 'title',
+        name: 'Title',
+        type: 'single_line_text_field',
+      },
+      {
+        key: 'description',
+        name: 'Description',
+        type: 'multi_line_text_field',
+      },
+      {
+        key: 'action',
+        name: 'Action code',
+        type: 'single_line_text_field',
+      },
+      {
+        key: 'points_value',
+        name: 'Points value',
+        type: 'number_integer',
+      },
+      {
+        key: 'active',
+        name: 'Active',
+        type: 'boolean',
+      },
+    ],
+  },
+  {
+    type: LOYALTY_METAOBJECT_TYPES.redemption,
+    name: 'Loyalty Redemption',
+    description:
+      'Catalog of point redemptions (fixed discount, percent discount, free shipping).',
+    displayNameKey: 'title',
+    fieldDefinitions: [
+      {
+        key: 'title',
+        name: 'Title',
+        type: 'single_line_text_field',
+      },
+      {
+        key: 'description',
+        name: 'Description',
+        type: 'multi_line_text_field',
+      },
+      {
+        key: 'reward_type',
+        name: 'Reward type',
+        type: 'single_line_text_field',
+      },
+      {
+        key: 'reward_value',
+        name: 'Reward value',
+        type: 'single_line_text_field',
+      },
+      {
+        key: 'points_cost',
+        name: 'Points cost',
+        type: 'number_integer',
+      },
+      {
+        key: 'active',
+        name: 'Active',
+        type: 'boolean',
+      },
+    ],
+  },
 ];
 
 const DEFAULT_TIER_SEEDS: LoyaltyTierInput[] = [
@@ -363,14 +436,29 @@ export async function reconcileLoyaltyProgram(admin: AdminApiContext) {
   return fetchLoyaltyProgramConfiguration(admin);
 }
 
+function lookupDefinition(
+  configuration: LoyaltyProgramConfiguration,
+  type: string,
+) {
+  switch (type) {
+    case LOYALTY_METAOBJECT_TYPES.tier:
+      return configuration.tierDefinition;
+    case LOYALTY_METAOBJECT_TYPES.benefit:
+      return configuration.benefitDefinition;
+    case LOYALTY_METAOBJECT_TYPES.earnRule:
+      return configuration.earnRuleDefinition;
+    case LOYALTY_METAOBJECT_TYPES.redemption:
+      return configuration.redemptionDefinition;
+    default:
+      return null;
+  }
+}
+
 async function ensureLoyaltyDefinitions(admin: AdminApiContext) {
   let configuration = await fetchLoyaltyProgramConfiguration(admin);
 
   for (const blueprint of LOYALTY_DEFINITION_BLUEPRINTS) {
-    const currentDefinition =
-      blueprint.type === LOYALTY_METAOBJECT_TYPES.tier
-        ? configuration.tierDefinition
-        : configuration.benefitDefinition;
+    const currentDefinition = lookupDefinition(configuration, blueprint.type);
 
     if (!currentDefinition) {
       await createMetaobjectDefinition(admin, blueprint);
