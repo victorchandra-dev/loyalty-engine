@@ -111,3 +111,19 @@ description = "Pending redemption that the discount function applies at checkout
   [customer.metafields.app.loyalty_active_redemption.access]
   admin = "merchant_read"
   customer_account = "read"
+
+[customer.metafields.app.loyalty_referred_by]
+type = "json"
+name = "Loyalty Referred By"
+description = "Attribution payload for customers who arrived via a referral link. Written once on first signin after the storefront captures a ref code; the engine refuses to overwrite."
+
+  [customer.metafields.app.loyalty_referred_by.access]
+  admin = "merchant_read"
+
+[customer.metafields.app.loyalty_referred_by_credited]
+type = "boolean"
+name = "Loyalty Referral Credited"
+description = "True once the referrer (and any referee signup bonus) has been awarded for this customer's first paid order. Prevents double-credit on refund + re-purchase."
+
+  [customer.metafields.app.loyalty_referred_by_credited.access]
+  admin = "merchant_read"

@@ -16,6 +16,8 @@ import {
   APP_METAFIELD_NAMESPACE,
   CUSTOMER_LOYALTY_ACTIVE_REDEMPTION_KEY,
   CUSTOMER_LOYALTY_POINTS_BALANCE_KEY,
+  CUSTOMER_LOYALTY_REFERRED_BY_CREDITED_KEY,
+  CUSTOMER_LOYALTY_REFERRED_BY_KEY,
   CUSTOMER_LOYALTY_STATE_KEY,
   REDEMPTION_TTL_MS,
 } from './constants';
@@ -297,6 +299,15 @@ const CUSTOMER_POINTS_BALANCE_QUERY = `#graphql
       stateValue: metafield(namespace: "$app", key: "loyalty_state") {
         value
       }
+      referredBy: metafield(namespace: "$app", key: "loyalty_referred_by") {
+        value
+      }
+      referredByCredited: metafield(
+        namespace: "$app"
+        key: "loyalty_referred_by_credited"
+      ) {
+        value
+      }
     }
   }
 ` as const;
@@ -306,6 +317,8 @@ type CustomerPointsBalanceData = {
     id: string;
     pointsBalance: {value: string | null} | null;
     stateValue: {value: string | null} | null;
+    referredBy: {value: string | null} | null;
+    referredByCredited: {value: string | null} | null;
   } | null;
 };
 
@@ -315,6 +328,8 @@ export async function fetchCustomerPointsState(
 ): Promise<{
   pointsBalance: number;
   signupAwarded: boolean;
+  referredBy: ReferralAttribution | null;
+  referredByCredited: boolean;
 }> {
   const data = await adminGraphql<CustomerPointsBalanceData>(
     admin,
@@ -341,10 +356,229 @@ export async function fetchCustomerPointsState(
     }
   }
 
+  let referredBy: ReferralAttribution | null = null;
+  const referredByRaw = data.customer?.referredBy?.value;
+  if (referredByRaw) {
+    try {
+      const parsed = JSON.parse(referredByRaw) as Partial<ReferralAttribution>;
+      if (parsed?.referrerCustomerId) {
+        referredBy = {
+          referrerCustomerId: parsed.referrerCustomerId,
+          attributedAt: parsed.attributedAt ?? '',
+        };
+      }
+    } catch {
+      // ignore parse errors — treat as not attributed
+    }
+  }
+
+  const referredByCredited = data.customer?.referredByCredited?.value === 'true';
+
   return {
     pointsBalance: Number.isFinite(balance) ? balance : 0,
     signupAwarded,
+    referredBy,
+    referredByCredited,
   };
+}
+
+// ----------------------------------------------------------------------------
+// Referral attribution
+// ----------------------------------------------------------------------------
+
+const CUSTOMER_REFERRAL_ATTRIBUTION_QUERY = `#graphql
+  query LoyaltyCustomerReferralAttribution($refereeId: ID!, $referrerId: ID!) {
+    referee: customer(id: $refereeId) {
+      id
+      referredBy: metafield(namespace: "$app", key: "loyalty_referred_by") {
+        value
+      }
+    }
+    referrer: customer(id: $referrerId) {
+      id
+    }
+  }
+` as const;
+
+type CustomerReferralAttributionData = {
+  referee: {
+    id: string;
+    referredBy: {value: string | null} | null;
+  } | null;
+  referrer: {
+    id: string;
+  } | null;
+};
+
+export class ReferralAttributionError extends Error {
+  status: number;
+  constructor(message: string, status = 400) {
+    super(message);
+    this.status = status;
+    this.name = 'ReferralAttributionError';
+  }
+}
+
+export type ReferralAttribution = {
+  referrerCustomerId: string;
+  attributedAt: string;
+};
+
+/**
+ * Attribute a referee customer to a referrer:
+ *  - Reject self-referrals (refereeId === referrerId).
+ *  - Verify both customers exist in Shopify.
+ *  - Refuse if the referee already has a referred_by metafield (one-shot;
+ *    first attribution wins; prevents post-signup hijacking).
+ *  - Write the referee's loyalty_referred_by metafield as JSON.
+ *
+ * The actual point award fires later, on the referee's first paid order
+ * (see syncCustomerLoyaltyStateFromMetrics).
+ */
+export async function attributeReferralForCustomer({
+  admin,
+  refereeId,
+  referrerId,
+}: {
+  admin: AdminApiContext;
+  refereeId: string;
+  referrerId: string;
+}): Promise<ReferralAttribution> {
+  if (refereeId === referrerId) {
+    throw new ReferralAttributionError(
+      'A customer cannot refer themselves.',
+      400,
+    );
+  }
+
+  const data = await adminGraphql<CustomerReferralAttributionData>(
+    admin,
+    CUSTOMER_REFERRAL_ATTRIBUTION_QUERY,
+    {refereeId, referrerId},
+  );
+
+  if (!data.referee) {
+    throw new ReferralAttributionError('Referee customer not found.', 404);
+  }
+  if (!data.referrer) {
+    throw new ReferralAttributionError('Referrer customer not found.', 404);
+  }
+  if (data.referee.referredBy?.value) {
+    throw new ReferralAttributionError(
+      'Customer is already attributed to a referrer.',
+      409,
+    );
+  }
+
+  const attribution: ReferralAttribution = {
+    referrerCustomerId: referrerId,
+    attributedAt: new Date().toISOString(),
+  };
+
+  const result = await adminGraphql<MetafieldsSetMutationData>(
+    admin,
+    METAFIELDS_SET_MUTATION,
+    {
+      metafields: [
+        {
+          ownerId: refereeId,
+          namespace: APP_METAFIELD_NAMESPACE,
+          key: CUSTOMER_LOYALTY_REFERRED_BY_KEY,
+          type: 'json',
+          value: JSON.stringify(attribution),
+        },
+      ],
+    },
+  );
+
+  assertNoUserErrors(
+    result.metafieldsSet.userErrors,
+    'Failed to attribute referral',
+  );
+
+  return attribution;
+}
+
+/**
+ * Credit a referrer for one of their referees' first paid orders. Reads the
+ * referrer's current balance, adds the referral bonus, writes it back. Pure
+ * append — does not touch any of the referrer's other state.
+ *
+ * Idempotency lives upstream (the caller flips `referred_by_credited=true`
+ * on the referee before/after invoking this so it can't double-fire).
+ */
+export async function creditReferrerForFirstPaidOrder({
+  admin,
+  referrerId,
+  bonusPoints,
+}: {
+  admin: AdminApiContext;
+  referrerId: string;
+  bonusPoints: number;
+}): Promise<{newBalance: number; pointsAwarded: number}> {
+  if (bonusPoints <= 0) {
+    return {newBalance: 0, pointsAwarded: 0};
+  }
+
+  const current = await fetchCustomerPointsState(admin, referrerId);
+  const newBalance = Math.max(0, current.pointsBalance + bonusPoints);
+
+  const result = await adminGraphql<MetafieldsSetMutationData>(
+    admin,
+    METAFIELDS_SET_MUTATION,
+    {
+      metafields: [
+        {
+          ownerId: referrerId,
+          namespace: APP_METAFIELD_NAMESPACE,
+          key: CUSTOMER_LOYALTY_POINTS_BALANCE_KEY,
+          type: 'number_integer',
+          value: String(newBalance),
+        },
+      ],
+    },
+  );
+
+  assertNoUserErrors(
+    result.metafieldsSet.userErrors,
+    'Failed to credit referrer',
+  );
+
+  return {newBalance, pointsAwarded: bonusPoints};
+}
+
+/**
+ * Mark a referee's loyalty_referred_by_credited flag = true so the
+ * orders/paid webhook will not re-fire the referral credit on subsequent
+ * orders (or after a refund + repurchase).
+ */
+export async function markRefereeReferralCredited({
+  admin,
+  refereeId,
+}: {
+  admin: AdminApiContext;
+  refereeId: string;
+}): Promise<void> {
+  const result = await adminGraphql<MetafieldsSetMutationData>(
+    admin,
+    METAFIELDS_SET_MUTATION,
+    {
+      metafields: [
+        {
+          ownerId: refereeId,
+          namespace: APP_METAFIELD_NAMESPACE,
+          key: CUSTOMER_LOYALTY_REFERRED_BY_CREDITED_KEY,
+          type: 'boolean',
+          value: 'true',
+        },
+      ],
+    },
+  );
+
+  assertNoUserErrors(
+    result.metafieldsSet.userErrors,
+    'Failed to mark referral credited',
+  );
 }
 
 /**

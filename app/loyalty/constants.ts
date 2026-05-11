@@ -9,6 +9,9 @@ export const SHOP_LOYALTY_PROGRAM_ENABLED_KEY = 'loyalty_program_enabled';
 export const CUSTOMER_LOYALTY_STATE_KEY = 'loyalty_state';
 export const CUSTOMER_LOYALTY_POINTS_BALANCE_KEY = 'loyalty_points_balance';
 export const CUSTOMER_LOYALTY_ACTIVE_REDEMPTION_KEY = 'loyalty_active_redemption';
+export const CUSTOMER_LOYALTY_REFERRED_BY_KEY = 'loyalty_referred_by';
+export const CUSTOMER_LOYALTY_REFERRED_BY_CREDITED_KEY =
+  'loyalty_referred_by_credited';
 
 /**
  * Default lifetime of an applied redemption before the discount function

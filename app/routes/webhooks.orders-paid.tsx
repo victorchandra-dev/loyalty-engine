@@ -4,8 +4,11 @@ import {
   getOrdersPaidOrderAmount,
 } from '../../src/webhooks/orders-paid.js';
 import type {OrdersPaidWebhookPayload} from '../../src/webhooks/orders-paid.js';
+import {getOneShotEarnPoints} from '../../src/domain/program.js';
 import {
+  creditReferrerForFirstPaidOrder,
   fetchCustomerPointsState,
+  markRefereeReferralCredited,
   projectPointsAwardForOrder,
   syncCustomerLoyaltyState,
 } from '../loyalty/customer-state.server';
@@ -44,6 +47,10 @@ export const action = async ({request}: ActionFunctionArgs) => {
 
   let pointsBalance = 0;
   const awardedRules: string[] = [];
+  let referralCreditNeeded: {
+    referrerId: string;
+    bonusPoints: number;
+  } | null = null;
 
   try {
     const currentState = await fetchCustomerPointsState(admin, customerAdminId);
@@ -60,6 +67,26 @@ export const action = async ({request}: ActionFunctionArgs) => {
     ) {
       awardedRules.push('signup');
     }
+
+    // Referral credit fires on the referee's first eligible paid order. Both
+    // referrer and referee earn the `referral` earn rule's points_value
+    // (bilateral V1 model). We layer the referee's bonus on top of the
+    // projection here, and queue the referrer credit + the "credited" flag
+    // for after the sync below.
+    if (
+      currentState.referredBy &&
+      !currentState.referredByCredited &&
+      currentState.referredBy.referrerCustomerId !== customerAdminId
+    ) {
+      const bonus = getOneShotEarnPoints('referral', program.earnRules);
+      if (bonus > 0) {
+        pointsBalance = Math.max(0, pointsBalance + bonus);
+        referralCreditNeeded = {
+          referrerId: currentState.referredBy.referrerCustomerId,
+          bonusPoints: bonus,
+        };
+      }
+    }
   } catch (error) {
     // If the customer has no metafields yet, GraphQL returns nulls which the
     // helper handles. Anything else we log and fall back to a zero-points
@@ -74,6 +101,25 @@ export const action = async ({request}: ActionFunctionArgs) => {
     pointsBalance,
     awardedRules,
   });
+
+  if (referralCreditNeeded) {
+    try {
+      await creditReferrerForFirstPaidOrder({
+        admin,
+        referrerId: referralCreditNeeded.referrerId,
+        bonusPoints: referralCreditNeeded.bonusPoints,
+      });
+      await markRefereeReferralCredited({
+        admin,
+        refereeId: customerAdminId,
+      });
+    } catch (error) {
+      // Best-effort: log and let a manual reconciliation pick this up. We
+      // don't fail the webhook because the referee's own state is already
+      // saved correctly.
+      console.error('[loyalty] Failed to credit referral', error);
+    }
+  }
 
   return new Response();
 };
