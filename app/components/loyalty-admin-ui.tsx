@@ -120,17 +120,29 @@ export function ProgramHero({
       </div>
 
       <div className={styles.heroPills}>
-        <div className={styles.discountPill}>
+        <div
+          className={`${styles.discountPill} ${
+            currentDiscountId ? '' : styles.discountPillPending
+          }`}
+        >
           <span className={styles.pulseDot} />
           {currentDiscountId
             ? 'Automatic discount connected'
-            : 'Discount owner pending'}
+            : 'Discount owner pending — run Initialize program'}
         </div>
-        <div className={styles.discountPill}>
+        <div
+          className={`${styles.discountPill} ${
+            storefrontWired ? '' : styles.discountPillPending
+          }`}
+        >
           <span className={styles.pulseDot} />
           {storefrontWired
             ? 'Storefront redemption wired'
-            : 'Storefront redemption not yet wired'}
+            : tierCount === 0
+              ? 'Publish a tier to wire storefront redemption'
+              : redemptionCount === 0
+                ? 'Publish a redemption to wire storefront redemption'
+                : 'Storefront redemption not yet wired'}
         </div>
       </div>
     </div>
@@ -351,12 +363,14 @@ export function EarnRuleEditor({
   onAddRule,
   onRemoveRule,
   onUpdateRule,
+  onSave,
 }: {
   earnRules: EarnRuleDraft[];
   saving: boolean;
   onAddRule: () => void;
   onRemoveRule: (clientId: string) => void;
   onUpdateRule: (clientId: string, patch: EarnRulePatch) => void;
+  onSave: () => void;
 }) {
   return (
     <s-section heading="Earn rules">
@@ -387,9 +401,19 @@ export function EarnRuleEditor({
       </div>
 
       <div className={styles.editorFooter}>
-        <s-button variant="secondary" onClick={onAddRule}>
-          Add earn rule
-        </s-button>
+        <div className={styles.editorActions}>
+          <s-button variant="secondary" onClick={onAddRule}>
+            Add earn rule
+          </s-button>
+          <s-button
+            variant="primary"
+            onClick={onSave}
+            {...(saving ? {loading: true} : {})}
+            {...(earnRules.length === 0 ? {disabled: true} : {})}
+          >
+            Save earn rules
+          </s-button>
+        </div>
         <span className={styles.footerNote}>
           {saving ? 'Saving rules…' : `${earnRules.length} rule(s) drafted`}
         </span>
@@ -404,12 +428,14 @@ export function RedemptionEditor({
   onAddRedemption,
   onRemoveRedemption,
   onUpdateRedemption,
+  onSave,
 }: {
   redemptions: RedemptionDraft[];
   saving: boolean;
   onAddRedemption: () => void;
   onRemoveRedemption: (clientId: string) => void;
   onUpdateRedemption: (clientId: string, patch: RedemptionPatch) => void;
+  onSave: () => void;
 }) {
   return (
     <s-section heading="Redemptions">
@@ -440,11 +466,23 @@ export function RedemptionEditor({
       </div>
 
       <div className={styles.editorFooter}>
-        <s-button variant="secondary" onClick={onAddRedemption}>
-          Add redemption
-        </s-button>
+        <div className={styles.editorActions}>
+          <s-button variant="secondary" onClick={onAddRedemption}>
+            Add redemption
+          </s-button>
+          <s-button
+            variant="primary"
+            onClick={onSave}
+            {...(saving ? {loading: true} : {})}
+            {...(redemptions.length === 0 ? {disabled: true} : {})}
+          >
+            Save redemptions
+          </s-button>
+        </div>
         <span className={styles.footerNote}>
-          {saving ? 'Saving redemptions…' : `${redemptions.length} redemption(s) drafted`}
+          {saving
+            ? 'Saving redemptions…'
+            : `${redemptions.length} redemption(s) drafted`}
         </span>
       </div>
     </s-section>

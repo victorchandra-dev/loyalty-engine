@@ -131,12 +131,25 @@
   font-weight: 650;
 }
 
+/* Pending state — amber/warning tone. Use when a prerequisite is unmet,
+   so the pill's visual matches the message ("not yet wired", "pending"). */
+.discountPillPending {
+  border-color: rgba(184, 110, 0, 0.28);
+  background: rgba(252, 238, 207, 0.85);
+  color: #7a4a04;
+}
+
 .pulseDot {
   width: 0.5rem;
   height: 0.5rem;
   border-radius: 999px;
   background: #008060;
   box-shadow: 0 0 0 0.25rem rgba(0, 128, 96, 0.14);
+}
+
+.discountPillPending .pulseDot {
+  background: #b86e00;
+  box-shadow: 0 0 0 0.25rem rgba(184, 110, 0, 0.18);
 }
 
 .actionCard {
@@ -323,6 +336,12 @@
 .editorFooter {
   align-items: center;
   margin-top: 1rem;
+}
+
+.editorActions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
 }
 
 .footerNote {
