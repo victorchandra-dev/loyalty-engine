@@ -32,9 +32,7 @@ export type LoyaltyEarnAction =
 export type LoyaltyRedemptionRewardType =
   | 'fixed_discount'
   | 'percent_discount'
-  | 'free_shipping'
-  | 'free_product'
-  | 'early_access';
+  | 'free_shipping';
 
 export type MerchantMetaobjectEntry = {
   id: string;
@@ -121,8 +119,6 @@ const KNOWN_REWARD_TYPES: ReadonlySet<LoyaltyRedemptionRewardType> = new Set([
   'fixed_discount',
   'percent_discount',
   'free_shipping',
-  'free_product',
-  'early_access',
 ]);
 
 /**

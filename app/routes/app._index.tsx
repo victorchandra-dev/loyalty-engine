@@ -436,15 +436,6 @@ export default function Index() {
 
       <ResolvedRewards benefits={data.benefits} />
 
-      <s-button
-        slot="primary-action"
-        variant="primary"
-        onClick={saveEarnRules}
-        {...(earnRulesSaveFetcher.state !== 'idle' ? {loading: true} : {})}
-      >
-        Save earn rules
-      </s-button>
-
       <EarnRuleEditor
         earnRules={earnRules}
         saving={earnRulesSaveFetcher.state !== 'idle'}
@@ -469,12 +460,11 @@ export default function Index() {
       />
 
       <s-button
-        slot="primary-action"
         variant="primary"
-        onClick={saveRedemptions}
-        {...(redemptionsSaveFetcher.state !== 'idle' ? {loading: true} : {})}
+        onClick={saveEarnRules}
+        {...(earnRulesSaveFetcher.state !== 'idle' ? {loading: true} : {})}
       >
-        Save redemptions
+        Save earn rules
       </s-button>
 
       <RedemptionEditor
@@ -499,6 +489,14 @@ export default function Index() {
           )
         }
       />
+
+      <s-button
+        variant="primary"
+        onClick={saveRedemptions}
+        {...(redemptionsSaveFetcher.state !== 'idle' ? {loading: true} : {})}
+      >
+        Save redemptions
+      </s-button>
 
       <EarnRulesAndRedemptions
         earnRules={data.earnRules}

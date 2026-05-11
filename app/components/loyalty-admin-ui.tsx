@@ -529,8 +529,8 @@ export function EarnRulesAndRedemptions({
         ) : (
           <s-paragraph>
             No redemptions published yet. Storefront uses bundled defaults ($10,
-            $25, $60 off, free shipping, early access) until you author
-            metaobjects of type <s-text variant="strong">loyalty_redemption</s-text>.
+            $25, $60 off, free shipping) until you author metaobjects of type{' '}
+            <s-text variant="strong">loyalty_redemption</s-text>.
           </s-paragraph>
         )}
       </s-stack>
@@ -693,8 +693,6 @@ const REDEMPTION_REWARD_CHOICES = [
   {value: 'fixed_discount', label: 'Fixed-amount discount'},
   {value: 'percent_discount', label: 'Percent discount'},
   {value: 'free_shipping', label: 'Free shipping'},
-  {value: 'free_product', label: 'Free product'},
-  {value: 'early_access', label: 'Early access'},
 ] as const;
 
 function EarnRuleCard({

@@ -145,12 +145,10 @@ function redemptionValue(redemption: ActiveRedemption) {
       // Cap at 100 defensively
       return {percentage: {value: Math.min(100, numericValue)}};
     case 'free_shipping':
-    case 'free_product':
-    case 'early_access':
     default:
-      // free_shipping needs the cart.delivery-options target wired up first
-      // (toml registration + a separate function entrypoint). free_product +
-      // early_access are storefront-only metadata for now.
+      // free_shipping needs the cart.delivery-options target wired up
+      // (toml registration + a separate function entrypoint). Until then,
+      // it is storefront-only metadata.
       return null;
   }
 }

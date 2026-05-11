@@ -13,7 +13,9 @@ two more concepts:
 - **Earn rules** — actions that award points (sign up, place an order, leave a
   review, refer a friend, follow on social, birthday, …).
 - **Redemptions** — what customers can spend points on (fixed-amount
-  discount, % off, free shipping, free product, early access, …).
+  discount, % off, free shipping). The discount function extension applies
+  all three at checkout. Future reward types (free product, early access,
+  …) can be added once the function gains support.
 
 These are merchant-editable from Shopify Admin → Settings → Custom data →
 Metaobjects, so the brand can change copy/values without a deploy.
@@ -49,10 +51,10 @@ the points-awarding worker.
 | `active`       | boolean            | no       | Default `true`                                     |
 
 **Recognised `reward_type` codes:** `fixed_discount`, `percent_discount`,
-`free_shipping`, `free_product`, `early_access`. The discount function
-extension currently knows how to apply `fixed_discount`, `percent_discount`,
-and `free_shipping`. The other two are storefront-only metadata until the
-extension is extended.
+`free_shipping`. The discount function extension applies all three at
+checkout. (`free_product` and `early_access` were previously scaffolded but
+removed because the extension cannot deliver them — reintroduce once the
+function gains support.)
 
 ## Read path
 

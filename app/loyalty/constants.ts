@@ -49,16 +49,13 @@ export const EARN_RULE_ACTIONS = [
 export type EarnRuleAction = (typeof EARN_RULE_ACTIONS)[number];
 
 /**
- * Redemption-reward types. The discount function extension knows how to
- * translate `fixed_discount`, `percent_discount`, and `free_shipping`. Other
- * codes are storefront-only metadata for now.
+ * Redemption-reward types. The discount function extension applies all three
+ * at checkout: fixed-amount discount, percent discount, free shipping.
  */
 export const REDEMPTION_REWARD_TYPES = [
   'fixed_discount',
   'percent_discount',
   'free_shipping',
-  'free_product',
-  'early_access',
 ] as const;
 
 export type RedemptionRewardType = (typeof REDEMPTION_REWARD_TYPES)[number];
