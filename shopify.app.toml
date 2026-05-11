@@ -92,6 +92,7 @@ description = "Derived loyalty state for the customer, managed by the loyalty en
 
   [customer.metafields.app.loyalty_state.access]
   admin = "merchant_read"
+  customer_account = "read"
 
 [customer.metafields.app.loyalty_points_balance]
 type = "number_integer"
