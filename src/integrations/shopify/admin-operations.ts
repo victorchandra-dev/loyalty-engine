@@ -89,6 +89,40 @@ export const LOYALTY_PROGRAM_ADMIN_QUERY = `#graphql
         }
       }
     }
+    earnRuleDefinition: metaobjectDefinitionByType(type: "loyalty_earn_rule") {
+      id
+      name
+      type
+      displayNameKey
+      access {
+        admin
+        storefront
+      }
+      fieldDefinitions {
+        key
+        name
+        type {
+          name
+        }
+      }
+    }
+    redemptionDefinition: metaobjectDefinitionByType(type: "loyalty_redemption") {
+      id
+      name
+      type
+      displayNameKey
+      access {
+        admin
+        storefront
+      }
+      fieldDefinitions {
+        key
+        name
+        type {
+          name
+        }
+      }
+    }
     tierDefinitions: metaobjects(type: "loyalty_reward_tier", first: 100) {
       nodes {
         id
@@ -101,6 +135,28 @@ export const LOYALTY_PROGRAM_ADMIN_QUERY = `#graphql
       }
     }
     benefitDefinitions: metaobjects(type: "loyalty_reward_benefit", first: 100) {
+      nodes {
+        id
+        handle
+        type
+        fields {
+          key
+          value
+        }
+      }
+    }
+    earnRuleEntries: metaobjects(type: "loyalty_earn_rule", first: 100) {
+      nodes {
+        id
+        handle
+        type
+        fields {
+          key
+          value
+        }
+      }
+    }
+    redemptionEntries: metaobjects(type: "loyalty_redemption", first: 100) {
       nodes {
         id
         handle
@@ -216,6 +272,69 @@ export const METAOBJECT_DELETE_MUTATION = `#graphql
   mutation LoyaltyMetaobjectDelete($id: ID!) {
     metaobjectDelete(id: $id) {
       deletedId
+      userErrors {
+        field
+        message
+        code
+      }
+    }
+  }
+` as const;
+
+export const METAFIELD_DEFINITION_BY_KEY_QUERY = `#graphql
+  query LoyaltyMetafieldDefinitionByKey(
+    $namespace: String!
+    $key: String!
+    $ownerType: MetafieldOwnerType!
+  ) {
+    metafieldDefinitions(
+      first: 1
+      namespace: $namespace
+      key: $key
+      ownerType: $ownerType
+    ) {
+      nodes {
+        id
+        namespace
+        key
+        access {
+          customerAccount
+        }
+      }
+    }
+  }
+` as const;
+
+export const METAFIELD_DEFINITION_CREATE_MUTATION = `#graphql
+  mutation LoyaltyMetafieldDefinitionCreate($definition: MetafieldDefinitionInput!) {
+    metafieldDefinitionCreate(definition: $definition) {
+      createdDefinition {
+        id
+        namespace
+        key
+      }
+      userErrors {
+        field
+        message
+        code
+      }
+    }
+  }
+` as const;
+
+export const METAFIELD_DEFINITION_UPDATE_MUTATION = `#graphql
+  mutation LoyaltyMetafieldDefinitionUpdate(
+    $definition: MetafieldDefinitionUpdateInput!
+  ) {
+    metafieldDefinitionUpdate(definition: $definition) {
+      updatedDefinition {
+        id
+        namespace
+        key
+        access {
+          customerAccount
+        }
+      }
       userErrors {
         field
         message

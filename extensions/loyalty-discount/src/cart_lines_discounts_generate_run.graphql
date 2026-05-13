@@ -7,6 +7,18 @@ query CartInput {
           currencyCode
         }
         numberOfOrders
+        activeRedemption: metafield(
+          namespace: "$app"
+          key: "loyalty_active_redemption"
+        ) {
+          jsonValue
+        }
+      }
+    }
+    cost {
+      subtotalAmount {
+        amount
+        currencyCode
       }
     }
   }

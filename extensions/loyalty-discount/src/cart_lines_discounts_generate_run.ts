@@ -12,7 +12,24 @@ const EMPTY_RESULT: CartLinesDiscountsGenerateRunResult = {
 };
 
 type LoyaltyProgramSnapshot = {
+  enabled?: boolean;
   program?: LoyaltyProgramConfig | null;
+};
+
+/**
+ * Per-customer redemption record persisted to the
+ * $app.loyalty_active_redemption metafield by the engine when a customer
+ * redeems points. Shape:
+ *   { handle, rewardType, rewardValue, expiresAt, pointsCost, redemptionId }
+ *
+ * The function reads it out of the input query and applies the discount when
+ * present + unexpired + of a supported type.
+ */
+type ActiveRedemption = {
+  handle: string;
+  rewardType: string;
+  rewardValue?: string | null;
+  expiresAt?: string | null;
 };
 
 export function cartLinesDiscountsGenerateRun(
@@ -26,14 +43,26 @@ export function cartLinesDiscountsGenerateRun(
     return EMPTY_RESULT;
   }
 
-  const program = getProgramFromSnapshot(input.shop.metafield?.jsonValue);
+  const snapshot = getSnapshotFromMetafield(input.shop.metafield?.jsonValue);
   const customer = input.cart.buyerIdentity?.customer;
+
+  // Master kill-switch — Settings page writes `enabled: false` into the
+  // snapshot when an admin pauses the program. Treat missing flag as enabled
+  // for backwards compatibility with snapshots written before the toggle.
+  if (snapshot?.enabled === false) {
+    return EMPTY_RESULT;
+  }
+
+  const program = snapshot?.program ?? null;
 
   if (!program || !customer) {
     return EMPTY_RESULT;
   }
 
-  const decision = resolveDiscountDecisionFromMetrics({
+  const operations: CartLinesDiscountsGenerateRunResult['operations'] = [];
+
+  // ---- Tier discount (existing behaviour) ----
+  const tierDecision = resolveDiscountDecisionFromMetrics({
     program,
     metrics: {
       lifetimeSpend: parseDecimal(customer.amountSpent.amount),
@@ -43,50 +72,128 @@ export function cartLinesDiscountsGenerateRun(
     },
   });
 
-  if (!decision || decision.percentage <= 0) {
+  if (tierDecision && tierDecision.percentage > 0) {
+    operations.push({
+      orderDiscountsAdd: {
+        candidates: [
+          {
+            message: tierDecision.label,
+            targets: [{orderSubtotal: {excludedCartLineIds: []}}],
+            value: {percentage: {value: tierDecision.percentage}},
+          },
+        ],
+        selectionStrategy: OrderDiscountSelectionStrategy.First,
+      },
+    });
+  }
+
+  // ---- Redemption discount (new) ----
+  // The generated CartInput type may not yet include activeRedemption until
+  // `npm run typegen` is re-run after the input query change. Read it via an
+  // untyped path so this compiles either way.
+  const customerNode = customer as unknown as {
+    activeRedemption?: {jsonValue?: unknown} | null;
+  };
+  const redemption = parseActiveRedemption(
+    customerNode.activeRedemption?.jsonValue,
+  );
+
+  if (redemption && !isExpired(redemption.expiresAt)) {
+    const candidate = buildRedemptionCandidate(redemption);
+    if (candidate) {
+      operations.push({
+        orderDiscountsAdd: {
+          candidates: [candidate],
+          selectionStrategy: OrderDiscountSelectionStrategy.First,
+        },
+      });
+    }
+  }
+
+  if (operations.length === 0) {
     return EMPTY_RESULT;
   }
 
+  return {operations};
+}
+
+function buildRedemptionCandidate(redemption: ActiveRedemption) {
+  const value = redemptionValue(redemption);
+  if (!value) return null;
   return {
-    operations: [
-      {
-        orderDiscountsAdd: {
-          candidates: [
-            {
-              message: decision.label,
-              targets: [
-                {
-                  orderSubtotal: {
-                    excludedCartLineIds: [],
-                  },
-                },
-              ],
-              value: {
-                percentage: {
-                  value: decision.percentage,
-                },
-              },
-            },
-          ],
-          selectionStrategy: OrderDiscountSelectionStrategy.First,
-        },
-      },
-    ],
+    message: redemptionMessage(redemption),
+    targets: [{orderSubtotal: {excludedCartLineIds: []}}],
+    value,
   };
 }
 
-function getProgramFromSnapshot(value: unknown): LoyaltyProgramConfig | null {
+function redemptionValue(redemption: ActiveRedemption) {
+  const numericValue = redemption.rewardValue
+    ? Number.parseFloat(redemption.rewardValue)
+    : null;
+
+  switch (redemption.rewardType) {
+    case 'fixed_discount':
+      if (numericValue === null || !Number.isFinite(numericValue) || numericValue <= 0) {
+        return null;
+      }
+      return {fixedAmount: {amount: numericValue}};
+    case 'percent_discount':
+      if (numericValue === null || !Number.isFinite(numericValue) || numericValue <= 0) {
+        return null;
+      }
+      // Cap at 100 defensively
+      return {percentage: {value: Math.min(100, numericValue)}};
+    case 'free_shipping':
+    default:
+      // free_shipping needs the cart.delivery-options target wired up
+      // (toml registration + a separate function entrypoint). Until then,
+      // it is storefront-only metadata.
+      return null;
+  }
+}
+
+function redemptionMessage(redemption: ActiveRedemption) {
+  if (redemption.rewardType === 'fixed_discount' && redemption.rewardValue) {
+    return `Reward redeemed: $${redemption.rewardValue} off`;
+  }
+  if (redemption.rewardType === 'percent_discount' && redemption.rewardValue) {
+    return `Reward redeemed: ${redemption.rewardValue}% off`;
+  }
+  return 'Loyalty reward redeemed';
+}
+
+function parseActiveRedemption(value: unknown): ActiveRedemption | null {
+  if (!value || typeof value !== 'object') return null;
+  const record = value as Record<string, unknown>;
+  const handle = typeof record.handle === 'string' ? record.handle : null;
+  const rewardType =
+    typeof record.rewardType === 'string' ? record.rewardType : null;
+  if (!handle || !rewardType) return null;
+
+  return {
+    handle,
+    rewardType,
+    rewardValue:
+      typeof record.rewardValue === 'string' ? record.rewardValue : null,
+    expiresAt:
+      typeof record.expiresAt === 'string' ? record.expiresAt : null,
+  };
+}
+
+function isExpired(expiresAt: string | null | undefined): boolean {
+  if (!expiresAt) return false;
+  const expiry = Date.parse(expiresAt);
+  if (!Number.isFinite(expiry)) return false;
+  // Function runtime doesn't expose the system clock; Shopify provides Date.
+  return Date.now() > expiry;
+}
+
+function getSnapshotFromMetafield(value: unknown): LoyaltyProgramSnapshot | null {
   if (!value || typeof value !== 'object') {
     return null;
   }
-
-  const snapshot = value as LoyaltyProgramSnapshot;
-
-  if (!snapshot.program) {
-    return null;
-  }
-
-  return snapshot.program;
+  return value as LoyaltyProgramSnapshot;
 }
 
 function parseDecimal(value: string) {

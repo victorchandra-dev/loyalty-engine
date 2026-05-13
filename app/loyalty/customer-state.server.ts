@@ -2,13 +2,24 @@ import type {AdminApiContext} from '@shopify/shopify-app-react-router/server';
 import {
   CUSTOMER_SPEND_QUERY,
   METAFIELDS_SET_MUTATION,
+  METAFIELD_DEFINITION_BY_KEY_QUERY,
+  METAFIELD_DEFINITION_CREATE_MUTATION,
+  METAFIELD_DEFINITION_UPDATE_MUTATION,
 } from '../../src/integrations/shopify/admin-operations.js';
 import {buildOrdersPaidSyncPlan} from '../../src/webhooks/orders-paid.js';
+import {
+  computeOrderPoints,
+  getOneShotEarnPoints,
+} from '../../src/domain/program.js';
 import type {LoyaltyProgramConfig} from '../../src/domain/program.js';
 import {
   APP_METAFIELD_NAMESPACE,
+  CUSTOMER_LOYALTY_ACTIVE_REDEMPTION_KEY,
   CUSTOMER_LOYALTY_POINTS_BALANCE_KEY,
+  CUSTOMER_LOYALTY_REFERRED_BY_CREDITED_KEY,
+  CUSTOMER_LOYALTY_REFERRED_BY_KEY,
   CUSTOMER_LOYALTY_STATE_KEY,
+  REDEMPTION_TTL_MS,
 } from './constants';
 import {adminGraphql, assertNoUserErrors} from './graphql.server';
 
@@ -65,11 +76,13 @@ export async function syncCustomerLoyaltyState({
   customerAdminId,
   program,
   pointsBalance = 0,
+  awardedRules,
 }: {
   admin: AdminApiContext;
   customerAdminId: string;
   program: LoyaltyProgramConfig;
   pointsBalance?: number;
+  awardedRules?: string[];
 }) {
   const metrics = await fetchCustomerSpendMetrics(admin, customerAdminId);
 
@@ -84,6 +97,7 @@ export async function syncCustomerLoyaltyState({
     lifetimeSpend: metrics.lifetimeSpend,
     numberOfOrders: metrics.numberOfOrders,
     pointsBalance,
+    awardedRules,
     program,
   });
 
@@ -101,6 +115,7 @@ export async function syncCustomerLoyaltyStateFromMetrics({
   numberOfOrders,
   program,
   pointsBalance = 0,
+  awardedRules,
 }: {
   admin: AdminApiContext;
   customerAdminId: string;
@@ -109,6 +124,7 @@ export async function syncCustomerLoyaltyStateFromMetrics({
   numberOfOrders: number;
   program: LoyaltyProgramConfig;
   pointsBalance?: number;
+  awardedRules?: string[];
 }) {
   const plan = buildOrdersPaidSyncPlan({
     currencyCode,
@@ -116,6 +132,7 @@ export async function syncCustomerLoyaltyStateFromMetrics({
     lifetimeSpend,
     numberOfOrders,
     pointsBalance,
+    awardedRules,
     program,
   });
 
@@ -148,4 +165,684 @@ export async function syncCustomerLoyaltyStateFromMetrics({
   );
 
   return plan;
+}
+
+const LOYALTY_STATE_DEFINITION_NAME = 'Loyalty State';
+const LOYALTY_STATE_DEFINITION_DESCRIPTION =
+  'Derived loyalty state for the customer. Maintained by the loyalty engine.';
+const CUSTOMER_ACCOUNT_READ = 'READ';
+
+type MetafieldDefinitionByKeyData = {
+  metafieldDefinitions: {
+    nodes: Array<{
+      id: string;
+      namespace: string;
+      key: string;
+      access: {
+        customerAccount: string | null;
+      } | null;
+    }>;
+  };
+};
+
+type MetafieldDefinitionCreateData = {
+  metafieldDefinitionCreate: {
+    createdDefinition: {id: string; namespace: string; key: string} | null;
+    userErrors: Array<{
+      field?: Array<string | number> | null;
+      message: string;
+      code?: string | null;
+    }>;
+  };
+};
+
+type MetafieldDefinitionUpdateData = {
+  metafieldDefinitionUpdate: {
+    updatedDefinition: {id: string} | null;
+    userErrors: Array<{
+      field?: Array<string | number> | null;
+      message: string;
+      code?: string | null;
+    }>;
+  };
+};
+
+/**
+ * Idempotently ensure the $app.loyalty_state Customer metafield definition
+ * exists and grants Customer Account API READ access. Without this, the
+ * storefront's Customer Account API cannot read the loyalty state.
+ *
+ * Strategy:
+ *  - Query for an existing definition with namespace=$app key=loyalty_state
+ *    on Customer.
+ *  - If absent, create it with customerAccount: READ.
+ *  - If present but access != READ, run a definition update.
+ */
+export async function ensureCustomerLoyaltyStateDefinition(
+  admin: AdminApiContext,
+) {
+  const existing = await adminGraphql<MetafieldDefinitionByKeyData>(
+    admin,
+    METAFIELD_DEFINITION_BY_KEY_QUERY,
+    {
+      namespace: APP_METAFIELD_NAMESPACE,
+      key: CUSTOMER_LOYALTY_STATE_KEY,
+      ownerType: 'CUSTOMER',
+    },
+  );
+
+  const definition = existing.metafieldDefinitions.nodes[0];
+
+  if (!definition) {
+    const created = await adminGraphql<MetafieldDefinitionCreateData>(
+      admin,
+      METAFIELD_DEFINITION_CREATE_MUTATION,
+      {
+        definition: {
+          name: LOYALTY_STATE_DEFINITION_NAME,
+          description: LOYALTY_STATE_DEFINITION_DESCRIPTION,
+          namespace: APP_METAFIELD_NAMESPACE,
+          key: CUSTOMER_LOYALTY_STATE_KEY,
+          type: 'json',
+          ownerType: 'CUSTOMER',
+          access: {
+            customerAccount: CUSTOMER_ACCOUNT_READ,
+          },
+        },
+      },
+    );
+
+    assertNoUserErrors(
+      created.metafieldDefinitionCreate.userErrors,
+      'Failed to create loyalty_state metafield definition',
+    );
+
+    return created.metafieldDefinitionCreate.createdDefinition;
+  }
+
+  if (definition.access?.customerAccount !== CUSTOMER_ACCOUNT_READ) {
+    const updated = await adminGraphql<MetafieldDefinitionUpdateData>(
+      admin,
+      METAFIELD_DEFINITION_UPDATE_MUTATION,
+      {
+        definition: {
+          namespace: APP_METAFIELD_NAMESPACE,
+          key: CUSTOMER_LOYALTY_STATE_KEY,
+          ownerType: 'CUSTOMER',
+          access: {
+            customerAccount: CUSTOMER_ACCOUNT_READ,
+          },
+        },
+      },
+    );
+
+    assertNoUserErrors(
+      updated.metafieldDefinitionUpdate.userErrors,
+      'Failed to update loyalty_state metafield definition access',
+    );
+  }
+
+  return definition;
+}
+
+// ----------------------------------------------------------------------------
+// Points awarding
+// ----------------------------------------------------------------------------
+
+const CUSTOMER_POINTS_BALANCE_QUERY = `#graphql
+  query LoyaltyCustomerPointsBalance($id: ID!) {
+    customer(id: $id) {
+      id
+      pointsBalance: metafield(namespace: "$app", key: "loyalty_points_balance") {
+        value
+      }
+      stateValue: metafield(namespace: "$app", key: "loyalty_state") {
+        value
+      }
+      referredBy: metafield(namespace: "$app", key: "loyalty_referred_by") {
+        value
+      }
+      referredByCredited: metafield(
+        namespace: "$app"
+        key: "loyalty_referred_by_credited"
+      ) {
+        value
+      }
+    }
+  }
+` as const;
+
+type CustomerPointsBalanceData = {
+  customer: {
+    id: string;
+    pointsBalance: {value: string | null} | null;
+    stateValue: {value: string | null} | null;
+    referredBy: {value: string | null} | null;
+    referredByCredited: {value: string | null} | null;
+  } | null;
+};
+
+export async function fetchCustomerPointsState(
+  admin: AdminApiContext,
+  customerAdminId: string,
+): Promise<{
+  pointsBalance: number;
+  signupAwarded: boolean;
+  referredBy: ReferralAttribution | null;
+  referredByCredited: boolean;
+}> {
+  const data = await adminGraphql<CustomerPointsBalanceData>(
+    admin,
+    CUSTOMER_POINTS_BALANCE_QUERY,
+    {id: customerAdminId},
+  );
+
+  const balance = Number.parseInt(
+    data.customer?.pointsBalance?.value ?? '0',
+    10,
+  );
+
+  // Inspect the loyalty_state JSON for an awardedRules tracker so we don't
+  // double-award one-shot rules. Older state records won't have this field;
+  // they default to "not yet awarded".
+  let signupAwarded = false;
+  const stateRaw = data.customer?.stateValue?.value;
+  if (stateRaw) {
+    try {
+      const parsed = JSON.parse(stateRaw) as {awardedRules?: string[]};
+      signupAwarded = Boolean(parsed.awardedRules?.includes('signup'));
+    } catch {
+      // ignore parse errors — treat as not yet awarded
+    }
+  }
+
+  let referredBy: ReferralAttribution | null = null;
+  const referredByRaw = data.customer?.referredBy?.value;
+  if (referredByRaw) {
+    try {
+      const parsed = JSON.parse(referredByRaw) as Partial<ReferralAttribution>;
+      if (parsed?.referrerCustomerId) {
+        referredBy = {
+          referrerCustomerId: parsed.referrerCustomerId,
+          attributedAt: parsed.attributedAt ?? '',
+        };
+      }
+    } catch {
+      // ignore parse errors — treat as not attributed
+    }
+  }
+
+  const referredByCredited = data.customer?.referredByCredited?.value === 'true';
+
+  return {
+    pointsBalance: Number.isFinite(balance) ? balance : 0,
+    signupAwarded,
+    referredBy,
+    referredByCredited,
+  };
+}
+
+// ----------------------------------------------------------------------------
+// Referral attribution
+// ----------------------------------------------------------------------------
+
+const CUSTOMER_REFERRAL_ATTRIBUTION_QUERY = `#graphql
+  query LoyaltyCustomerReferralAttribution($refereeId: ID!, $referrerId: ID!) {
+    referee: customer(id: $refereeId) {
+      id
+      referredBy: metafield(namespace: "$app", key: "loyalty_referred_by") {
+        value
+      }
+    }
+    referrer: customer(id: $referrerId) {
+      id
+    }
+  }
+` as const;
+
+type CustomerReferralAttributionData = {
+  referee: {
+    id: string;
+    referredBy: {value: string | null} | null;
+  } | null;
+  referrer: {
+    id: string;
+  } | null;
+};
+
+export class ReferralAttributionError extends Error {
+  status: number;
+  constructor(message: string, status = 400) {
+    super(message);
+    this.status = status;
+    this.name = 'ReferralAttributionError';
+  }
+}
+
+export type ReferralAttribution = {
+  referrerCustomerId: string;
+  attributedAt: string;
+};
+
+/**
+ * Attribute a referee customer to a referrer:
+ *  - Reject self-referrals (refereeId === referrerId).
+ *  - Verify both customers exist in Shopify.
+ *  - Refuse if the referee already has a referred_by metafield (one-shot;
+ *    first attribution wins; prevents post-signup hijacking).
+ *  - Write the referee's loyalty_referred_by metafield as JSON.
+ *
+ * The actual point award fires later, on the referee's first paid order
+ * (see syncCustomerLoyaltyStateFromMetrics).
+ */
+export async function attributeReferralForCustomer({
+  admin,
+  refereeId,
+  referrerId,
+}: {
+  admin: AdminApiContext;
+  refereeId: string;
+  referrerId: string;
+}): Promise<ReferralAttribution> {
+  if (refereeId === referrerId) {
+    throw new ReferralAttributionError(
+      'A customer cannot refer themselves.',
+      400,
+    );
+  }
+
+  const data = await adminGraphql<CustomerReferralAttributionData>(
+    admin,
+    CUSTOMER_REFERRAL_ATTRIBUTION_QUERY,
+    {refereeId, referrerId},
+  );
+
+  if (!data.referee) {
+    throw new ReferralAttributionError('Referee customer not found.', 404);
+  }
+  if (!data.referrer) {
+    throw new ReferralAttributionError('Referrer customer not found.', 404);
+  }
+  if (data.referee.referredBy?.value) {
+    throw new ReferralAttributionError(
+      'Customer is already attributed to a referrer.',
+      409,
+    );
+  }
+
+  const attribution: ReferralAttribution = {
+    referrerCustomerId: referrerId,
+    attributedAt: new Date().toISOString(),
+  };
+
+  const result = await adminGraphql<MetafieldsSetMutationData>(
+    admin,
+    METAFIELDS_SET_MUTATION,
+    {
+      metafields: [
+        {
+          ownerId: refereeId,
+          namespace: APP_METAFIELD_NAMESPACE,
+          key: CUSTOMER_LOYALTY_REFERRED_BY_KEY,
+          type: 'json',
+          value: JSON.stringify(attribution),
+        },
+      ],
+    },
+  );
+
+  assertNoUserErrors(
+    result.metafieldsSet.userErrors,
+    'Failed to attribute referral',
+  );
+
+  return attribution;
+}
+
+/**
+ * Credit a referrer for one of their referees' first paid orders. Reads the
+ * referrer's current balance, adds the referral bonus, writes it back. Pure
+ * append — does not touch any of the referrer's other state.
+ *
+ * Idempotency lives upstream (the caller flips `referred_by_credited=true`
+ * on the referee before/after invoking this so it can't double-fire).
+ */
+export async function creditReferrerForFirstPaidOrder({
+  admin,
+  referrerId,
+  bonusPoints,
+}: {
+  admin: AdminApiContext;
+  referrerId: string;
+  bonusPoints: number;
+}): Promise<{newBalance: number; pointsAwarded: number}> {
+  if (bonusPoints <= 0) {
+    return {newBalance: 0, pointsAwarded: 0};
+  }
+
+  const current = await fetchCustomerPointsState(admin, referrerId);
+  const newBalance = Math.max(0, current.pointsBalance + bonusPoints);
+
+  const result = await adminGraphql<MetafieldsSetMutationData>(
+    admin,
+    METAFIELDS_SET_MUTATION,
+    {
+      metafields: [
+        {
+          ownerId: referrerId,
+          namespace: APP_METAFIELD_NAMESPACE,
+          key: CUSTOMER_LOYALTY_POINTS_BALANCE_KEY,
+          type: 'number_integer',
+          value: String(newBalance),
+        },
+      ],
+    },
+  );
+
+  assertNoUserErrors(
+    result.metafieldsSet.userErrors,
+    'Failed to credit referrer',
+  );
+
+  return {newBalance, pointsAwarded: bonusPoints};
+}
+
+/**
+ * Mark a referee's loyalty_referred_by_credited flag = true so the
+ * orders/paid webhook will not re-fire the referral credit on subsequent
+ * orders (or after a refund + repurchase).
+ */
+export async function markRefereeReferralCredited({
+  admin,
+  refereeId,
+}: {
+  admin: AdminApiContext;
+  refereeId: string;
+}): Promise<void> {
+  const result = await adminGraphql<MetafieldsSetMutationData>(
+    admin,
+    METAFIELDS_SET_MUTATION,
+    {
+      metafields: [
+        {
+          ownerId: refereeId,
+          namespace: APP_METAFIELD_NAMESPACE,
+          key: CUSTOMER_LOYALTY_REFERRED_BY_CREDITED_KEY,
+          type: 'boolean',
+          value: 'true',
+        },
+      ],
+    },
+  );
+
+  assertNoUserErrors(
+    result.metafieldsSet.userErrors,
+    'Failed to mark referral credited',
+  );
+}
+
+/**
+ * Compute the new points balance for a paid order.
+ *
+ * Adds:
+ *  - Points for the `order` earn rule (1pt/$1 by default, or pointsValue)
+ *  - Signup bonus (one-shot) if program has a signup rule and the customer
+ *    has not yet been credited it.
+ *
+ * Pure function — no IO. Returns the new balance + which rules were just
+ * awarded for the first time so caller can persist the awardedRules list.
+ */
+export function projectPointsAwardForOrder({
+  orderAmount,
+  currentBalance,
+  signupAwarded,
+  program,
+}: {
+  orderAmount: number;
+  currentBalance: number;
+  signupAwarded: boolean;
+  program: LoyaltyProgramConfig;
+}): {
+  newBalance: number;
+  pointsAwarded: number;
+  newlyAwardedOneShots: string[];
+} {
+  const orderPoints = computeOrderPoints({
+    orderAmount,
+    earnRules: program.earnRules,
+  });
+
+  let oneShotPoints = 0;
+  const newlyAwardedOneShots: string[] = [];
+
+  if (!signupAwarded) {
+    const signupBonus = getOneShotEarnPoints('signup', program.earnRules);
+    if (signupBonus > 0) {
+      oneShotPoints += signupBonus;
+      newlyAwardedOneShots.push('signup');
+    }
+  }
+
+  const totalAwarded = orderPoints + oneShotPoints;
+  return {
+    newBalance: Math.max(0, currentBalance + totalAwarded),
+    pointsAwarded: totalAwarded,
+    newlyAwardedOneShots,
+  };
+}
+
+// ----------------------------------------------------------------------------
+// Redemption application
+// ----------------------------------------------------------------------------
+
+/**
+ * The JSON shape the discount function reads from the customer's
+ * loyalty_active_redemption metafield. The function only honours fixed_discount
+ * and percent_discount; other reward types can be persisted but are filtered
+ * out at function-evaluation time.
+ */
+export type ActiveRedemptionRecord = {
+  handle: string;
+  rewardType: string;
+  rewardValue?: string | null;
+  pointsCost: number;
+  expiresAt: string;
+  redemptionId?: string | null;
+  redeemedAt: string;
+};
+
+export class RedemptionError extends Error {
+  status: number;
+  constructor(message: string, status = 400) {
+    super(message);
+    this.status = status;
+    this.name = 'RedemptionError';
+  }
+}
+
+/**
+ * Apply a redemption for a customer:
+ *  - Read the program snapshot to find the redemption by handle.
+ *  - Read the customer's current points balance.
+ *  - Verify balance >= pointsCost; otherwise throw 400.
+ *  - Debit the balance and persist both the new balance and the active
+ *    redemption record (with a default TTL).
+ *
+ * Returns the new balance and the redemption record written.
+ */
+export async function applyRedemptionForCustomer({
+  admin,
+  customerAdminId,
+  redemptionHandle,
+  program,
+}: {
+  admin: AdminApiContext;
+  customerAdminId: string;
+  redemptionHandle: string;
+  program: LoyaltyProgramConfig;
+}): Promise<{
+  newBalance: number;
+  redemption: ActiveRedemptionRecord;
+}> {
+  const redemption = program.redemptions.find(
+    (entry) => entry.handle === redemptionHandle && entry.active,
+  );
+  if (!redemption) {
+    throw new RedemptionError(
+      `No active redemption with handle "${redemptionHandle}" exists in the program.`,
+      404,
+    );
+  }
+
+  const currentState = await fetchCustomerPointsState(admin, customerAdminId);
+  if (currentState.pointsBalance < redemption.pointsCost) {
+    throw new RedemptionError(
+      `Customer has ${currentState.pointsBalance} points but the redemption requires ${redemption.pointsCost}.`,
+      400,
+    );
+  }
+
+  const now = new Date();
+  const record: ActiveRedemptionRecord = {
+    handle: redemption.handle,
+    rewardType: redemption.rewardType,
+    rewardValue: redemption.rewardValue ?? null,
+    pointsCost: redemption.pointsCost,
+    expiresAt: new Date(now.getTime() + REDEMPTION_TTL_MS).toISOString(),
+    redemptionId: redemption.id,
+    redeemedAt: now.toISOString(),
+  };
+
+  const newBalance = Math.max(0, currentState.pointsBalance - redemption.pointsCost);
+
+  const result = await adminGraphql<MetafieldsSetMutationData>(
+    admin,
+    METAFIELDS_SET_MUTATION,
+    {
+      metafields: [
+        {
+          ownerId: customerAdminId,
+          namespace: APP_METAFIELD_NAMESPACE,
+          key: CUSTOMER_LOYALTY_POINTS_BALANCE_KEY,
+          type: 'number_integer',
+          value: String(newBalance),
+        },
+        {
+          ownerId: customerAdminId,
+          namespace: APP_METAFIELD_NAMESPACE,
+          key: CUSTOMER_LOYALTY_ACTIVE_REDEMPTION_KEY,
+          type: 'json',
+          value: JSON.stringify(record),
+        },
+      ],
+    },
+  );
+
+  assertNoUserErrors(
+    result.metafieldsSet.userErrors,
+    'Failed to apply customer redemption',
+  );
+
+  return {newBalance, redemption: record};
+}
+
+/**
+ * Clear an active redemption (e.g. after the discount is applied at checkout
+ * or if the customer cancels). Optionally refund the points so a redeem-then-
+ * abandon flow doesn't burn the balance — pass `refund: true` for that.
+ */
+export async function clearRedemptionForCustomer({
+  admin,
+  customerAdminId,
+  refund = false,
+}: {
+  admin: AdminApiContext;
+  customerAdminId: string;
+  refund?: boolean;
+}) {
+  let pointsBalance: number | null = null;
+
+  if (refund) {
+    const currentState = await fetchCustomerPointsState(admin, customerAdminId);
+    const refundedAmount = await fetchActiveRedemptionPointsCost(
+      admin,
+      customerAdminId,
+    );
+    pointsBalance = currentState.pointsBalance + refundedAmount;
+  }
+
+  const metafields: Array<Record<string, unknown>> = [
+    {
+      ownerId: customerAdminId,
+      namespace: APP_METAFIELD_NAMESPACE,
+      key: CUSTOMER_LOYALTY_ACTIVE_REDEMPTION_KEY,
+      type: 'json',
+      value: JSON.stringify(null),
+    },
+  ];
+
+  if (pointsBalance !== null) {
+    metafields.push({
+      ownerId: customerAdminId,
+      namespace: APP_METAFIELD_NAMESPACE,
+      key: CUSTOMER_LOYALTY_POINTS_BALANCE_KEY,
+      type: 'number_integer',
+      value: String(pointsBalance),
+    });
+  }
+
+  const result = await adminGraphql<MetafieldsSetMutationData>(
+    admin,
+    METAFIELDS_SET_MUTATION,
+    {metafields},
+  );
+
+  assertNoUserErrors(
+    result.metafieldsSet.userErrors,
+    'Failed to clear customer redemption',
+  );
+
+  return {pointsBalance};
+}
+
+const ACTIVE_REDEMPTION_QUERY = `#graphql
+  query LoyaltyCustomerActiveRedemption($id: ID!) {
+    customer(id: $id) {
+      id
+      activeRedemption: metafield(
+        namespace: "$app"
+        key: "loyalty_active_redemption"
+      ) {
+        value
+      }
+    }
+  }
+` as const;
+
+type ActiveRedemptionQueryData = {
+  customer: {
+    id: string;
+    activeRedemption: {value: string | null} | null;
+  } | null;
+};
+
+async function fetchActiveRedemptionPointsCost(
+  admin: AdminApiContext,
+  customerAdminId: string,
+): Promise<number> {
+  const data = await adminGraphql<ActiveRedemptionQueryData>(
+    admin,
+    ACTIVE_REDEMPTION_QUERY,
+    {id: customerAdminId},
+  );
+  const raw = data.customer?.activeRedemption?.value;
+  if (!raw) return 0;
+  try {
+    const parsed = JSON.parse(raw) as {pointsCost?: number};
+    return typeof parsed.pointsCost === 'number' && Number.isFinite(parsed.pointsCost)
+      ? parsed.pointsCost
+      : 0;
+  } catch {
+    return 0;
+  }
 }

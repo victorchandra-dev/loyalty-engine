@@ -26,7 +26,7 @@ api_version = "2026-04"
   "metaobjects/update"
 ]
   uri = "/webhooks/metaobjects"
-  filter = "type:loyalty_reward_tier OR type:loyalty_reward_benefit"
+  filter = "type:loyalty_reward_tier OR type:loyalty_reward_benefit OR type:loyalty_earn_rule OR type:loyalty_redemption"
 
   [[webhooks.subscriptions]]
   topics = [ "orders/paid" ]
@@ -77,6 +77,14 @@ description = "Persistent automatic app discount identifier managed by the loyal
   [shop.metafields.app.loyalty_discount_id.access]
   admin = "merchant_read"
 
+[shop.metafields.app.loyalty_program_enabled]
+type = "boolean"
+name = "Loyalty Program Enabled"
+description = "Master on/off toggle for the loyalty program. When false the discount function emits no candidates and the storefront treats the program as paused."
+
+  [shop.metafields.app.loyalty_program_enabled.access]
+  admin = "merchant_read"
+
 [customer.metafields.app.loyalty_state]
 type = "json"
 name = "Loyalty State"
@@ -84,6 +92,7 @@ description = "Derived loyalty state for the customer, managed by the loyalty en
 
   [customer.metafields.app.loyalty_state.access]
   admin = "merchant_read"
+  customer_account = "read"
 
 [customer.metafields.app.loyalty_points_balance]
 type = "number_integer"
@@ -91,4 +100,30 @@ name = "Loyalty Points Balance"
 description = "Derived points balance reserved for future loyalty mechanics"
 
   [customer.metafields.app.loyalty_points_balance.access]
+  admin = "merchant_read"
+  customer_account = "read"
+
+[customer.metafields.app.loyalty_active_redemption]
+type = "json"
+name = "Loyalty Active Redemption"
+description = "Pending redemption that the discount function applies at checkout. Set when a customer redeems points; cleared on use or expiry."
+
+  [customer.metafields.app.loyalty_active_redemption.access]
+  admin = "merchant_read"
+  customer_account = "read"
+
+[customer.metafields.app.loyalty_referred_by]
+type = "json"
+name = "Loyalty Referred By"
+description = "Attribution payload for customers who arrived via a referral link. Written once on first signin after the storefront captures a ref code; the engine refuses to overwrite."
+
+  [customer.metafields.app.loyalty_referred_by.access]
+  admin = "merchant_read"
+
+[customer.metafields.app.loyalty_referred_by_credited]
+type = "boolean"
+name = "Loyalty Referral Credited"
+description = "True once the referrer (and any referee signup bonus) has been awarded for this customer's first paid order. Prevents double-credit on refund + re-purchase."
+
+  [customer.metafields.app.loyalty_referred_by_credited.access]
   admin = "merchant_read"

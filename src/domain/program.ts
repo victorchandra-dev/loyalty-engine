@@ -1,6 +1,8 @@
 export const LOYALTY_METAOBJECT_TYPES = {
   tier: 'loyalty_reward_tier',
   benefit: 'loyalty_reward_benefit',
+  earnRule: 'loyalty_earn_rule',
+  redemption: 'loyalty_redemption',
 } as const;
 
 export type LoyaltyMetric =
@@ -15,6 +17,22 @@ export type LoyaltyBenefitType =
   | 'gift'
   | 'perk'
   | 'content_access';
+
+export type LoyaltyEarnAction =
+  | 'signup'
+  | 'order'
+  | 'birthday'
+  | 'follow_instagram'
+  | 'follow_tiktok'
+  | 'review'
+  | 'referral'
+  | 'newsletter'
+  | 'custom';
+
+export type LoyaltyRedemptionRewardType =
+  | 'fixed_discount'
+  | 'percent_discount'
+  | 'free_shipping';
 
 export type MerchantMetaobjectEntry = {
   id: string;
@@ -52,11 +70,111 @@ export type LoyaltyBenefitConfig = {
   metadata: Record<string, unknown> | null;
 };
 
+export type LoyaltyEarnRuleConfig = {
+  id: string;
+  handle: string;
+  title: string;
+  description: string | null;
+  // Action codes the engine doesn't recognise are surfaced verbatim so the
+  // storefront can render unknown labels without crashing — the points-awarding
+  // worker simply ignores them.
+  action: LoyaltyEarnAction | string;
+  pointsValue: number | null;
+  active: boolean;
+};
+
+export type LoyaltyRedemptionConfig = {
+  id: string;
+  handle: string;
+  title: string;
+  description: string | null;
+  pointsCost: number;
+  // Same forward-compat behaviour as earn rules.
+  rewardType: LoyaltyRedemptionRewardType | string;
+  rewardValue: string | null;
+  active: boolean;
+};
+
 export type LoyaltyProgramConfig = {
   currencyCode: string;
   tiers: LoyaltyTierConfig[];
   benefits: LoyaltyBenefitConfig[];
+  earnRules: LoyaltyEarnRuleConfig[];
+  redemptions: LoyaltyRedemptionConfig[];
 };
+
+const KNOWN_EARN_ACTIONS: ReadonlySet<LoyaltyEarnAction> = new Set([
+  'signup',
+  'order',
+  'birthday',
+  'follow_instagram',
+  'follow_tiktok',
+  'review',
+  'referral',
+  'newsletter',
+  'custom',
+]);
+
+const KNOWN_REWARD_TYPES: ReadonlySet<LoyaltyRedemptionRewardType> = new Set([
+  'fixed_discount',
+  'percent_discount',
+  'free_shipping',
+]);
+
+/**
+ * Compute points to award for a paid order, given the active earn rules.
+ *
+ * Rules with `action === 'order'` apply per-order:
+ *   - If `pointsValue` is set, that flat amount is added.
+ *   - If `pointsValue` is null, the order awards 1 point per whole currency
+ *     unit of order amount (the storefront-default 1pt/$1 contract).
+ *
+ * Rules with one-shot actions (signup, birthday, etc.) are NOT awarded by this
+ * function — they're handled by their own triggers, not the orders/paid hook.
+ *
+ * Returns 0 if no `order` earn rule exists or none are active.
+ */
+export function computeOrderPoints({
+  orderAmount,
+  earnRules,
+}: {
+  orderAmount: number;
+  earnRules: LoyaltyEarnRuleConfig[];
+}): number {
+  if (!Number.isFinite(orderAmount) || orderAmount <= 0) {
+    return 0;
+  }
+
+  let total = 0;
+  for (const rule of earnRules) {
+    if (!rule.active) continue;
+    if (rule.action !== 'order') continue;
+
+    if (rule.pointsValue === null) {
+      // Dynamic accrual: 1pt per whole currency unit
+      total += Math.floor(orderAmount);
+    } else {
+      total += Math.max(0, rule.pointsValue);
+    }
+  }
+
+  return total;
+}
+
+/**
+ * Returns the points value to award for a one-shot earn rule (signup,
+ * birthday, etc.). Used by their own triggers (not orders/paid). Returns 0 if
+ * the rule isn't found or is inactive.
+ */
+export function getOneShotEarnPoints(
+  action: LoyaltyEarnAction,
+  earnRules: LoyaltyEarnRuleConfig[],
+): number {
+  const rule = earnRules.find(
+    (candidate) => candidate.active && candidate.action === action,
+  );
+  return rule?.pointsValue ?? 0;
+}
 
 export type NormalizeProgramResult = {
   program: LoyaltyProgramConfig | null;
@@ -67,14 +185,25 @@ export function normalizeLoyaltyProgram({
   currencyCode,
   tierEntries,
   benefitEntries = [],
+  earnRuleEntries = [],
+  redemptionEntries = [],
 }: {
   currencyCode: string;
   tierEntries: MerchantMetaobjectEntry[];
   benefitEntries?: MerchantMetaobjectEntry[];
+  earnRuleEntries?: MerchantMetaobjectEntry[];
+  redemptionEntries?: MerchantMetaobjectEntry[];
 }): NormalizeProgramResult {
   const tierResult = normalizeTierEntries(tierEntries);
   const benefitResult = normalizeBenefitEntries(benefitEntries);
-  const issues = [...tierResult.issues, ...benefitResult.issues];
+  const earnRuleResult = normalizeEarnRuleEntries(earnRuleEntries);
+  const redemptionResult = normalizeRedemptionEntries(redemptionEntries);
+  const issues = [
+    ...tierResult.issues,
+    ...benefitResult.issues,
+    ...earnRuleResult.issues,
+    ...redemptionResult.issues,
+  ];
 
   if (tierResult.tiers.length === 0) {
     return {program: null, issues};
@@ -89,6 +218,8 @@ export function normalizeLoyaltyProgram({
         explicitBenefits: benefitResult.benefits,
         tierHandles: tierResult.tiers.map((tier) => tier.handle),
       }),
+      earnRules: earnRuleResult.earnRules,
+      redemptions: redemptionResult.redemptions,
     },
     issues,
   };
@@ -193,6 +324,91 @@ export function normalizeBenefitEntries(entries: MerchantMetaobjectEntry[]) {
   }
 
   return {benefits, issues};
+}
+
+export function normalizeEarnRuleEntries(entries: MerchantMetaobjectEntry[]) {
+  const issues: ProgramConfigIssue[] = [];
+  const earnRules: LoyaltyEarnRuleConfig[] = [];
+
+  for (const entry of entries) {
+    if (entry.type !== LOYALTY_METAOBJECT_TYPES.earnRule) {
+      continue;
+    }
+
+    const title = getRequiredString(entry, 'title', issues);
+    const action = getRequiredString(entry, 'action', issues);
+
+    if (title === null || action === null) {
+      continue;
+    }
+
+    if (!KNOWN_EARN_ACTIONS.has(action as LoyaltyEarnAction)) {
+      issues.push({
+        entryId: entry.id,
+        field: 'action',
+        message: `Unknown action code: ${action}. Will surface in the storefront but the engine will not auto-award points for it.`,
+        severity: 'warning',
+      });
+    }
+
+    earnRules.push({
+      id: entry.id,
+      handle: entry.handle,
+      title,
+      description: getOptionalString(entry, 'description'),
+      action: action as LoyaltyEarnAction | string,
+      pointsValue: getOptionalNumber(entry, 'points_value', issues),
+      active: getOptionalBoolean(entry, 'active') ?? true,
+    });
+  }
+
+  return {earnRules: earnRules.filter((rule) => rule.active), issues};
+}
+
+export function normalizeRedemptionEntries(entries: MerchantMetaobjectEntry[]) {
+  const issues: ProgramConfigIssue[] = [];
+  const redemptions: LoyaltyRedemptionConfig[] = [];
+
+  for (const entry of entries) {
+    if (entry.type !== LOYALTY_METAOBJECT_TYPES.redemption) {
+      continue;
+    }
+
+    const title = getRequiredString(entry, 'title', issues);
+    const rewardType = getRequiredString(entry, 'reward_type', issues);
+    const pointsCost = getRequiredNumber(entry, 'points_cost', issues);
+
+    if (title === null || rewardType === null || pointsCost === null) {
+      continue;
+    }
+
+    if (!KNOWN_REWARD_TYPES.has(rewardType as LoyaltyRedemptionRewardType)) {
+      issues.push({
+        entryId: entry.id,
+        field: 'reward_type',
+        message: `Unknown reward type: ${rewardType}. Will surface in the storefront but the discount function may not apply it.`,
+        severity: 'warning',
+      });
+    }
+
+    redemptions.push({
+      id: entry.id,
+      handle: entry.handle,
+      title,
+      description: getOptionalString(entry, 'description'),
+      pointsCost,
+      rewardType: rewardType as LoyaltyRedemptionRewardType | string,
+      rewardValue: getOptionalString(entry, 'reward_value'),
+      active: getOptionalBoolean(entry, 'active') ?? true,
+    });
+  }
+
+  return {
+    redemptions: redemptions
+      .filter((reward) => reward.active)
+      .sort((left, right) => left.pointsCost - right.pointsCost),
+    issues,
+  };
 }
 
 function getBenefitType(

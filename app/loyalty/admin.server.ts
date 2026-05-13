@@ -21,7 +21,10 @@ import {
   SHOP_LOYALTY_DISCOUNT_ID_KEY,
 } from './constants';
 import {adminGraphql, assertNoUserErrors} from './graphql.server';
-import {syncCustomerLoyaltyStateFromMetrics} from './customer-state.server';
+import {
+  fetchCustomerPointsState,
+  syncCustomerLoyaltyStateFromMetrics,
+} from './customer-state.server';
 
 const LOYALTY_DISCOUNT_TITLE = 'Loyalty Program Discount';
 const LOYALTY_DISCOUNT_FUNCTION_HANDLE = 'loyalty-discount';
@@ -190,6 +193,79 @@ const LOYALTY_DEFINITION_BLUEPRINTS: DefinitionBlueprint[] = [
       },
     ],
   },
+  {
+    type: LOYALTY_METAOBJECT_TYPES.earnRule,
+    name: 'Loyalty Earn Rule',
+    description:
+      'Actions that award loyalty points (signup, order, birthday, review, referral, …).',
+    displayNameKey: 'title',
+    fieldDefinitions: [
+      {
+        key: 'title',
+        name: 'Title',
+        type: 'single_line_text_field',
+      },
+      {
+        key: 'description',
+        name: 'Description',
+        type: 'multi_line_text_field',
+      },
+      {
+        key: 'action',
+        name: 'Action code',
+        type: 'single_line_text_field',
+      },
+      {
+        key: 'points_value',
+        name: 'Points value',
+        type: 'number_integer',
+      },
+      {
+        key: 'active',
+        name: 'Active',
+        type: 'boolean',
+      },
+    ],
+  },
+  {
+    type: LOYALTY_METAOBJECT_TYPES.redemption,
+    name: 'Loyalty Redemption',
+    description:
+      'Catalog of point redemptions (fixed discount, percent discount, free shipping).',
+    displayNameKey: 'title',
+    fieldDefinitions: [
+      {
+        key: 'title',
+        name: 'Title',
+        type: 'single_line_text_field',
+      },
+      {
+        key: 'description',
+        name: 'Description',
+        type: 'multi_line_text_field',
+      },
+      {
+        key: 'reward_type',
+        name: 'Reward type',
+        type: 'single_line_text_field',
+      },
+      {
+        key: 'reward_value',
+        name: 'Reward value',
+        type: 'single_line_text_field',
+      },
+      {
+        key: 'points_cost',
+        name: 'Points cost',
+        type: 'number_integer',
+      },
+      {
+        key: 'active',
+        name: 'Active',
+        type: 'boolean',
+      },
+    ],
+  },
 ];
 
 const DEFAULT_TIER_SEEDS: LoyaltyTierInput[] = [
@@ -308,6 +384,20 @@ export async function backfillCustomerLoyaltyLevels(admin: AdminApiContext) {
       const currencyCode =
         customer.amountSpent?.currencyCode ?? configuration.currencyCode;
 
+      // Round-trip the customer's existing points balance and awardedRules so
+      // a backfill doesn't wipe one-shot bonuses already credited (e.g. signup).
+      let pointsBalance = 0;
+      let awardedRules: string[] | undefined;
+      try {
+        const existing = await fetchCustomerPointsState(admin, customer.id);
+        pointsBalance = existing.pointsBalance;
+        if (existing.signupAwarded) {
+          awardedRules = ['signup'];
+        }
+      } catch {
+        // First-time backfill or transient error — fall back to zero.
+      }
+
       await syncCustomerLoyaltyStateFromMetrics({
         admin,
         customerAdminId: customer.id,
@@ -315,6 +405,8 @@ export async function backfillCustomerLoyaltyLevels(admin: AdminApiContext) {
         lifetimeSpend: Number.isFinite(lifetimeSpend) ? lifetimeSpend : 0,
         numberOfOrders: Number(customer.numberOfOrders ?? 0),
         program: configuration.syncPlan.program,
+        pointsBalance,
+        awardedRules,
       });
 
       syncedCustomers += 1;
@@ -344,14 +436,29 @@ export async function reconcileLoyaltyProgram(admin: AdminApiContext) {
   return fetchLoyaltyProgramConfiguration(admin);
 }
 
+function lookupDefinition(
+  configuration: LoyaltyProgramConfiguration,
+  type: string,
+) {
+  switch (type) {
+    case LOYALTY_METAOBJECT_TYPES.tier:
+      return configuration.tierDefinition;
+    case LOYALTY_METAOBJECT_TYPES.benefit:
+      return configuration.benefitDefinition;
+    case LOYALTY_METAOBJECT_TYPES.earnRule:
+      return configuration.earnRuleDefinition;
+    case LOYALTY_METAOBJECT_TYPES.redemption:
+      return configuration.redemptionDefinition;
+    default:
+      return null;
+  }
+}
+
 async function ensureLoyaltyDefinitions(admin: AdminApiContext) {
   let configuration = await fetchLoyaltyProgramConfiguration(admin);
 
   for (const blueprint of LOYALTY_DEFINITION_BLUEPRINTS) {
-    const currentDefinition =
-      blueprint.type === LOYALTY_METAOBJECT_TYPES.tier
-        ? configuration.tierDefinition
-        : configuration.benefitDefinition;
+    const currentDefinition = lookupDefinition(configuration, blueprint.type);
 
     if (!currentDefinition) {
       await createMetaobjectDefinition(admin, blueprint);
