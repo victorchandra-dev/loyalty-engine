@@ -168,15 +168,15 @@ export default function CustomersRoute() {
           <s-stack direction="inline" gap="base">
             <s-text>
               On this page:{' '}
-              <s-text variant="strong">{data.rows.length}</s-text>
+              <s-text type="strong">{data.rows.length}</s-text>
             </s-text>
             <s-text>
               Active redemptions:{' '}
-              <s-text variant="strong">{totalActive}</s-text>
+              <s-text type="strong">{totalActive}</s-text>
             </s-text>
             <s-text>
               Points outstanding (page):{' '}
-              <s-text variant="strong">
+              <s-text type="strong">
                 {totalPoints.toLocaleString('en-US')}
               </s-text>
             </s-text>
@@ -200,7 +200,7 @@ export default function CustomersRoute() {
                 <s-table-row key={row.id}>
                   <s-table-cell>
                     <s-stack direction="block" gap="small">
-                      <s-text variant="strong">{row.name}</s-text>
+                      <s-text type="strong">{row.name}</s-text>
                       <s-text>{row.email}</s-text>
                     </s-stack>
                   </s-table-cell>

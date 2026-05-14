@@ -384,7 +384,7 @@ export function EarnRuleEditor({
         <div className={styles.tierCards}>
           {earnRules.length === 0 ? (
             <s-paragraph>
-              No earn rules drafted. Click "Add earn rule" to start.
+              No earn rules drafted. Click &quot;Add earn rule&quot; to start.
             </s-paragraph>
           ) : (
             earnRules.map((rule, index) => (
@@ -449,7 +449,7 @@ export function RedemptionEditor({
         <div className={styles.tierCards}>
           {redemptions.length === 0 ? (
             <s-paragraph>
-              No redemptions drafted. Click "Add redemption" to start.
+              No redemptions drafted. Click &quot;Add redemption&quot; to start.
             </s-paragraph>
           ) : (
             redemptions.map((redemption, index) => (
@@ -501,14 +501,14 @@ export function EarnRulesAndRedemptions({
       <s-stack direction="block" gap="base">
         <s-paragraph>
           Merchant-managed metaobjects of type{' '}
-          <s-text variant="strong">loyalty_earn_rule</s-text> and{' '}
-          <s-text variant="strong">loyalty_redemption</s-text>. The storefront
+          <s-text type="strong">loyalty_earn_rule</s-text> and{' '}
+          <s-text type="strong">loyalty_redemption</s-text>. The storefront
           surfaces them on the rewards page and floating launcher; falls back to
           bundled defaults when nothing is published. See
           docs/earn-rules-redemptions.md for the schema.
         </s-paragraph>
 
-        <s-heading level="3">Earn rules ({earnRules.length})</s-heading>
+        <s-heading>Earn rules ({earnRules.length})</s-heading>
         {earnRules.length ? (
           <div className={styles.rewardGrid}>
             {earnRules.map((rule) => (
@@ -535,11 +535,11 @@ export function EarnRulesAndRedemptions({
           <s-paragraph>
             No earn rules published yet. Storefront uses bundled defaults
             (signup, order, birthday, follow, review, referral) until you author
-            metaobjects of type <s-text variant="strong">loyalty_earn_rule</s-text>.
+            metaobjects of type <s-text type="strong">loyalty_earn_rule</s-text>.
           </s-paragraph>
         )}
 
-        <s-heading level="3">Redemptions ({redemptions.length})</s-heading>
+        <s-heading>Redemptions ({redemptions.length})</s-heading>
         {redemptions.length ? (
           <div className={styles.rewardGrid}>
             {redemptions.map((reward) => (
@@ -568,7 +568,7 @@ export function EarnRulesAndRedemptions({
           <s-paragraph>
             No redemptions published yet. Storefront uses bundled defaults ($10,
             $25, $60 off, free shipping) until you author metaobjects of type{' '}
-            <s-text variant="strong">loyalty_redemption</s-text>.
+            <s-text type="strong">loyalty_redemption</s-text>.
           </s-paragraph>
         )}
       </s-stack>
@@ -983,15 +983,6 @@ function StatusCard({
 function HeroMetric({label, value}: {label: string; value: string}) {
   return (
     <div className={styles.heroMetric}>
-      <span>{label}</span>
-      <strong>{value}</strong>
-    </div>
-  );
-}
-
-function PreviewMetric({label, value}: {label: string; value: string}) {
-  return (
-    <div>
       <span>{label}</span>
       <strong>{value}</strong>
     </div>

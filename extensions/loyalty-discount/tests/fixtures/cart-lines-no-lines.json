@@ -4,10 +4,19 @@
     "target": "cart.lines.discounts.generate.run",
     "input": {
       "cart": {
-        "lines": []
+        "buyerIdentity": null,
+        "cost": {
+          "subtotalAmount": {
+            "amount": "0.0",
+            "currencyCode": "USD"
+          }
+        }
+      },
+      "shop": {
+        "metafield": null
       },
       "discount": {
-        "discountClasses": ["ORDER", "PRODUCT"]
+        "discountClasses": ["ORDER"]
       }
     },
     "output": {
