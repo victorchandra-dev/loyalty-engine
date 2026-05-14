@@ -4,7 +4,12 @@ import {ServerRouter} from 'react-router';
 import {createReadableStreamFromReadable} from '@react-router/node';
 import {type EntryContext} from 'react-router';
 import {isbot} from 'isbot';
+import * as Sentry from '@sentry/node';
 import {addDocumentResponseHeaders} from './shopify.server';
+
+if (process.env.SENTRY_DSN) {
+  Sentry.init({dsn: process.env.SENTRY_DSN});
+}
 
 export const streamTimeout = 5000;
 

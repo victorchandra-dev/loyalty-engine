@@ -1,7 +1,11 @@
-import type {HeadersFunction, LoaderFunctionArgs} from 'react-router';
-import {Link, useLoaderData, useSearchParams} from 'react-router';
+import type {ActionFunctionArgs, HeadersFunction, LoaderFunctionArgs} from 'react-router';
+import {Form, Link, useActionData, useLoaderData, useNavigation, useSearchParams} from 'react-router';
 import {boundary} from '@shopify/shopify-app-react-router/server';
 import {fetchLoyaltyProgramConfiguration} from '../loyalty/program.server';
+import {
+  reconcilePendingReferrals,
+  type ReconcileReferralsResult,
+} from '../loyalty/customer-state.server';
 import {adminGraphql} from '../loyalty/graphql.server';
 import {authenticate} from '../shopify.server';
 
@@ -68,6 +72,20 @@ type CustomerRow = {
   pointsBalance: number;
   currentTier: string | null;
   hasActiveRedemption: boolean;
+};
+
+export const action = async ({request}: ActionFunctionArgs) => {
+  const {admin} = await authenticate.admin(request);
+  const configuration = await fetchLoyaltyProgramConfiguration(admin);
+  const bonusPoints =
+    configuration.syncPlan.program
+      ? (configuration.syncPlan.program.earnRules.find(
+          (r) => r.active && r.action === 'referral',
+        )?.pointsValue ?? 0)
+      : 0;
+
+  const result = await reconcilePendingReferrals(admin, bonusPoints);
+  return {reconcile: result};
 };
 
 export const loader = async ({request}: LoaderFunctionArgs) => {
@@ -141,8 +159,12 @@ export const loader = async ({request}: LoaderFunctionArgs) => {
 
 export default function CustomersRoute() {
   const data = useLoaderData<typeof loader>();
+  const actionData = useActionData<typeof action>();
+  const navigation = useNavigation();
   const [params] = useSearchParams();
   const currentCursor = params.get('after');
+  const isReconciling = navigation.state === 'submitting';
+  const reconcileResult = actionData?.reconcile as ReconcileReferralsResult | undefined;
 
   const totalActive = data.rows.filter((r) => r.hasActiveRedemption).length;
   const totalPoints = data.rows.reduce((sum, r) => sum + r.pointsBalance, 0);
@@ -245,6 +267,40 @@ export default function CustomersRoute() {
             </Link>
           ) : null}
         </s-stack>
+      </s-section>
+
+      <s-section heading="Referral reconciliation">
+        <s-paragraph>
+          Re-attempt referral credit for customers whose referrer was not
+          credited due to a transient failure during their first order.
+        </s-paragraph>
+
+        {reconcileResult ? (
+          <s-banner
+            tone={reconcileResult.failed.length > 0 ? 'warning' : 'success'}
+            heading={
+              reconcileResult.attempted === 0
+                ? 'No pending referrals found'
+                : `Reconciled ${reconcileResult.succeeded} of ${reconcileResult.attempted}`
+            }
+          >
+            {reconcileResult.failed.length > 0 ? (
+              <s-paragraph>
+                Failed: {reconcileResult.failed.map((f) => f.refereeId).join(', ')}
+              </s-paragraph>
+            ) : null}
+          </s-banner>
+        ) : null}
+
+        <Form method="post">
+          <s-button
+            variant="secondary"
+            type="submit"
+            disabled={isReconciling || undefined}
+          >
+            {isReconciling ? 'Reconciling…' : 'Reconcile pending referrals'}
+          </s-button>
+        </Form>
       </s-section>
     </s-page>
   );

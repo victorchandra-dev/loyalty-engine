@@ -1,93 +1,88 @@
-# Loyalty Engine App
+# Loyalty Engine
 
-This workspace contains the Shopify app that powers the long-term loyalty engine for the storefront.
+Shopify embedded app powering the Amada Flow loyalty program. React Router 7 + Polaris web components, deployed to Fly.io (`amadaflow-loyalty`).
 
-## Responsibilities
+## Capabilities
 
-- normalize merchant-managed loyalty configuration from Shopify admin
-- sync derived shop and customer loyalty state
-- own the automatic discount function used at checkout
-- provide an embedded admin UI for diagnostics and manual sync actions
-
-## Current Source Of Truth
-
-The current merchant-managed source of truth lives in Shopify admin:
-
-- `loyalty_reward_tier` merchant-owned metaobjects
-
-Supported tier fields today:
-
-- `label`
-- `minimum_spend`
-- `discount_percentage`
-
-The app also supports an optional future benefit layer:
-
-- `loyalty_reward_benefit`
+- **Earn rules** — flat or per-currency-unit points on orders; one-shot bonuses for signup, referral, birthday
+- **Tiered membership** — configurable tiers by lifetime spend, order count, or points balance
+- **Redemptions** — discount-code rewards debited against points balance
+- **Referral tracking** — attributes referrer on first order; reconciliation UI for partial failures
+- **Refund rollback** — automatically debits points when an order is refunded
+- **Webhook idempotency** — `lastOrderId` guard prevents double-awarding on Shopify retries
+- **Discount function** — Shopify function extension (`extensions/loyalty-discount`) emits tier + redemption discounts at checkout; short-circuits when program is disabled
+- **Image-gen tier lock** — monthly quota ladder enforced per tier
+- **On/off toggle** — program-enabled flag controls discount function and admin UI state
+- **GDPR compliance** — customer data request, customer redact, and shop redact handlers
 
 ## Structure
 
-- `app/`: embedded Shopify app UI, authentication, and webhook routes
-- `src/`: shared domain model and Shopify-specific sync helpers
-- `extensions/loyalty-discount`: Shopify discount function
-- `shopify.app.toml`: linked Shopify app configuration
-
-## Local Development
-
-Install dependencies:
-
-```bash
-npm install
+```
+app/
+  routes/          # Embedded admin UI + webhook + API handlers
+  loyalty/         # Server-side business logic (*.server.ts)
+  components/      # Admin UI components
+src/
+  domain/          # Pure domain logic (program, customer-state)
+  webhooks/        # Webhook payload parsers and helpers
+  __tests__/       # Vitest unit tests (42 tests)
+extensions/
+  loyalty-discount/  # Shopify discount function (Wasm)
 ```
 
-Run the embedded app locally:
+## Commands
 
 ```bash
-npm run dev
+npm run dev        # Local dev with Shopify CLI tunnel
+npm run build      # Production build
+npm run typecheck  # Type-check (react-router typegen + tsc)
+npx vitest run     # Run unit tests (src/__tests__/)
+npm run deploy     # shopify app deploy (registers webhooks + uploads function)
 ```
 
-Local preview stores app sessions in a SQLite file at `shopify-app.session.sqlite`.
-This keeps the dev runtime self-contained and avoids Prisma migrations during Shopify CLI previews.
-The app also patches the local `shopify_sessions` table to include refresh token columns required by the current Shopify session model.
-
-Useful commands:
+## Deploy
 
 ```bash
-npm run typecheck
-npm run build
-npm run deploy
+# 1. Deploy app + function extension to Shopify
+shopify app deploy
+
+# 2. Deploy server to Fly.io
+flyctl deploy
 ```
 
-## Current Admin UI
+Health check: `GET /health` — returns `{ok: true, db: "up"}` or 503.
 
-The app home page shows:
+## Environment variables
 
-- resolved loyalty tiers
-- resolved benefits
-- configuration issues
-- a manual "Sync program snapshot" action
+See `.env.example` for all required vars. Production secrets are set via Fly.io:
 
-## Derived App-Owned Metafields
+```bash
+flyctl secrets set LOYALTY_ENGINE_SHARED_SECRET=<value>
+flyctl secrets set SENTRY_DSN=<value>   # optional
+```
 
-The app declares and syncs:
+## GDPR webhooks
 
-### Shop metafields
+The three GDPR handlers are deployed at:
+- `POST /webhooks/customers/data-request`
+- `POST /webhooks/customers/redact`
+- `POST /webhooks/shop/redact`
 
-- `loyalty_program_snapshot`
-- `loyalty_program_issues`
-- `loyalty_program_synced_at`
-- `loyalty_discount_id`
+These must be registered manually in the Shopify Partner Dashboard → App → Configuration → Privacy webhooks (they cannot be registered via `shopify.app.toml`).
 
-### Customer metafields
+## App Store submission status
 
-- `loyalty_state`
-- `loyalty_points_balance`
-
-## Current Checkout Flow
-
-The current discount function reads:
-
-- the normalized shop-level loyalty program snapshot
-- the current customer spend and order metrics from function input
-
-It then resolves the active loyalty order discount for checkout.
+| Item | Status |
+|------|--------|
+| Core features | Complete |
+| Auth (shared-secret + admin JWT) | Complete |
+| Webhook idempotency | Complete |
+| Refund rollback | Complete |
+| GDPR handlers | Complete |
+| Unit tests (42) | Complete |
+| Health endpoint | Complete |
+| Sentry instrumentation | Complete |
+| GDPR URLs in Partner Dashboard | Pending |
+| Privacy policy URL | Pending |
+| App listing + screenshots | Pending |
+| Billing API | Pending (required if paid) |

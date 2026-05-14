@@ -99,9 +99,18 @@ async function resolveAdminContext(
   request: Request,
 ): Promise<AdminApiContext> {
   const providedSecret = request.headers.get(SHARED_SECRET_HEADER);
-  const expectedSecret = process.env.LOYALTY_ENGINE_SHARED_SECRET ?? '';
 
-  if (providedSecret && expectedSecret) {
+  // Shared-secret path — same logic as api.redeem: if the header is present,
+  // validate it strictly. Never fall through to admin auth for storefront
+  // requests (they carry no embedded session).
+  if (providedSecret !== null) {
+    const expectedSecret = process.env.LOYALTY_ENGINE_SHARED_SECRET ?? '';
+    if (!expectedSecret) {
+      throw new AuthError(
+        'LOYALTY_ENGINE_SHARED_SECRET is not configured on this server.',
+        500,
+      );
+    }
     if (!constantTimeEquals(providedSecret, expectedSecret)) {
       throw new AuthError('Invalid loyalty engine secret.', 401);
     }
@@ -116,6 +125,7 @@ async function resolveAdminContext(
     return admin;
   }
 
+  // Admin (embedded) path — only reached when no shared-secret header is sent.
   const {admin} = await authenticate.admin(request);
   return admin;
 }

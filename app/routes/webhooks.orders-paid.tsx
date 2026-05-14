@@ -1,7 +1,9 @@
 import type {ActionFunctionArgs} from 'react-router';
+import * as Sentry from '@sentry/node';
 import {
   getOrdersPaidCustomerAdminId,
   getOrdersPaidOrderAmount,
+  getOrdersPaidOrderGid,
 } from '../../src/webhooks/orders-paid.js';
 import type {OrdersPaidWebhookPayload} from '../../src/webhooks/orders-paid.js';
 import {getOneShotEarnPoints} from '../../src/domain/program.js';
@@ -27,6 +29,7 @@ export const action = async ({request}: ActionFunctionArgs) => {
 
   const ordersPaidPayload = payload as OrdersPaidWebhookPayload;
   const customerAdminId = getOrdersPaidCustomerAdminId(ordersPaidPayload);
+  const orderGid = getOrdersPaidOrderGid(ordersPaidPayload);
 
   if (!customerAdminId) {
     return new Response();
@@ -54,6 +57,15 @@ export const action = async ({request}: ActionFunctionArgs) => {
 
   try {
     const currentState = await fetchCustomerPointsState(admin, customerAdminId);
+
+    // Idempotency: skip if this exact order was already processed.
+    if (orderGid && currentState.lastOrderId === orderGid) {
+      console.warn(
+        `[loyalty] Skipping duplicate orders/paid for order ${orderGid}`,
+      );
+      return new Response();
+    }
+
     const projection = projectPointsAwardForOrder({
       orderAmount,
       currentBalance: currentState.pointsBalance,
@@ -92,15 +104,25 @@ export const action = async ({request}: ActionFunctionArgs) => {
     // helper handles. Anything else we log and fall back to a zero-points
     // sync rather than failing the webhook (Shopify would retry).
     console.error('[loyalty] Failed to project order points', error);
+    Sentry.captureException(error, {extra: {customerAdminId, orderGid}});
   }
 
-  await syncCustomerLoyaltyState({
-    admin,
-    customerAdminId,
-    program,
-    pointsBalance,
-    awardedRules,
-  });
+  try {
+    await syncCustomerLoyaltyState({
+      admin,
+      customerAdminId,
+      program,
+      pointsBalance,
+      awardedRules,
+      lastOrderId: orderGid ?? undefined,
+    });
+  } catch (error) {
+    // Log and return 200 so Shopify does not retry. A retry would re-read the
+    // pre-write balance and re-award the same points, causing a double credit.
+    console.error('[loyalty] Failed to sync customer loyalty state', error);
+    Sentry.captureException(error, {extra: {customerAdminId, orderGid}});
+    return new Response();
+  }
 
   if (referralCreditNeeded) {
     try {
@@ -118,6 +140,7 @@ export const action = async ({request}: ActionFunctionArgs) => {
       // don't fail the webhook because the referee's own state is already
       // saved correctly.
       console.error('[loyalty] Failed to credit referral', error);
+      Sentry.captureException(error, {extra: {customerAdminId, referralCreditNeeded}});
     }
   }
 

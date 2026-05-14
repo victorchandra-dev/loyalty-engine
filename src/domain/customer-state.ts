@@ -23,6 +23,11 @@ export type CustomerLoyaltyState = {
    * because legacy state records won't have it; missing means "none awarded".
    */
   awardedRules?: string[];
+  /**
+   * GID of the last order that triggered a points award. Used by the
+   * orders/paid webhook handler to skip duplicate deliveries.
+   */
+  lastOrderId?: string;
 };
 
 export function buildCustomerLoyaltyState({
@@ -30,11 +35,13 @@ export function buildCustomerLoyaltyState({
   metrics,
   program,
   awardedRules,
+  lastOrderId,
 }: {
   computedAt?: string;
   metrics: CustomerMetricSnapshot;
   program: LoyaltyProgramConfig;
   awardedRules?: string[];
+  lastOrderId?: string;
 }): CustomerLoyaltyState {
   const qualifiedTiers = getQualifiedTiers(program, metrics);
   const currentTier = qualifiedTiers.at(-1) ?? null;
@@ -52,6 +59,7 @@ export function buildCustomerLoyaltyState({
     ...(awardedRules && awardedRules.length > 0
       ? {awardedRules: [...new Set(awardedRules)]}
       : {}),
+    ...(lastOrderId ? {lastOrderId} : {}),
   };
 }
 
