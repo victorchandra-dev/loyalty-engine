@@ -4,16 +4,58 @@
     "target": "cart.lines.discounts.generate.run",
     "input": {
       "cart": {
-        "lines": [
-          {
-            "id": "gid://shopify/CartLine/0",
-            "cost": {
-              "subtotalAmount": {
-                "amount": "100.0"
-              }
+        "buyerIdentity": {
+          "customer": {
+            "amountSpent": {
+              "amount": "100.0",
+              "currencyCode": "USD"
+            },
+            "numberOfOrders": 2,
+            "activeRedemption": null
+          }
+        },
+        "cost": {
+          "subtotalAmount": {
+            "amount": "100.0",
+            "currencyCode": "USD"
+          }
+        }
+      },
+      "shop": {
+        "metafield": {
+          "jsonValue": {
+            "enabled": true,
+            "program": {
+              "currencyCode": "USD",
+              "tiers": [
+                {
+                  "id": "tier-silver",
+                  "handle": "silver",
+                  "name": "Silver",
+                  "metric": "lifetime_spend",
+                  "minimumValue": 50,
+                  "order": 1
+                }
+              ],
+              "benefits": [
+                {
+                  "id": "benefit-silver",
+                  "handle": "silver-discount",
+                  "tierHandle": "silver",
+                  "name": "Silver discount",
+                  "type": "discount_percentage",
+                  "value": 10,
+                  "displayLabel": "10% OFF ORDER",
+                  "description": null,
+                  "active": true,
+                  "metadata": null
+                }
+              ],
+              "earnRules": [],
+              "redemptions": []
             }
           }
-        ]
+        }
       },
       "discount": {
         "discountClasses": ["ORDER"]
@@ -35,7 +77,7 @@
                 ],
                 "value": {
                   "percentage": {
-                    "value": 10.0
+                    "value": 10
                   }
                 }
               }

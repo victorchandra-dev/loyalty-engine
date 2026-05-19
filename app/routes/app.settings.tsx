@@ -85,6 +85,7 @@ export default function SettingsRoute() {
   const data = useLoaderData<typeof loader>();
   const shopify = useAppBridge();
   const toggleFetcher = useFetcher<ActionData>();
+  const toggleResult = toggleFetcher.data;
   const isToggling =
     toggleFetcher.state === 'submitting' || toggleFetcher.state === 'loading';
   const optimisticEnabled =
@@ -95,16 +96,10 @@ export default function SettingsRoute() {
         : data.enabled;
 
   useEffect(() => {
-    const next = toggleFetcher.data;
-    if (!next?.message) return;
-    const prefix = next.status === 'error' ? 'Error: ' : '';
-    shopify.toast.show(`${prefix}${next.message}`);
-  }, [
-    toggleFetcher.data?.message,
-    toggleFetcher.data?.status,
-    toggleFetcher.data?.syncedAt,
-    shopify,
-  ]);
+    if (!toggleResult?.message) return;
+    const prefix = toggleResult.status === 'error' ? 'Error: ' : '';
+    shopify.toast.show(`${prefix}${toggleResult.message}`);
+  }, [toggleResult, shopify]);
 
   const toggle = (enabled: boolean) => {
     const formData = new FormData();
@@ -182,14 +177,14 @@ export default function SettingsRoute() {
         </s-paragraph>
         <s-unordered-list>
           <s-list-item>
-            <s-text variant="strong">LOYALTY_ENGINE_URL</s-text> — the public
+            <s-text type="strong">LOYALTY_ENGINE_URL</s-text> — the public
             HTTPS URL of this app (e.g. https://amadaflow-loyalty.fly.dev).
           </s-list-item>
           <s-list-item>
-            <s-text variant="strong">LOYALTY_ENGINE_SHARED_SECRET</s-text> —
+            <s-text type="strong">LOYALTY_ENGINE_SHARED_SECRET</s-text> —
             shared secret. Set the matching{' '}
-            <s-text variant="strong">LOYALTY_ENGINE_SHARED_SECRET</s-text> env
-            var on this app's host (Fly.io / wherever it is deployed) so both
+            <s-text type="strong">LOYALTY_ENGINE_SHARED_SECRET</s-text> env
+            var on this app&apos;s host (Fly.io / wherever it is deployed) so both
             sides can authenticate each other.
           </s-list-item>
         </s-unordered-list>
@@ -212,7 +207,7 @@ function DetailRow({label, value}: {label: string; value: string}) {
   return (
     <s-stack direction="inline" gap="base">
       <s-text>{label}</s-text>
-      <s-text variant="strong">{value}</s-text>
+      <s-text type="strong">{value}</s-text>
     </s-stack>
   );
 }

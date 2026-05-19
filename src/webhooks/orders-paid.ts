@@ -2,12 +2,22 @@ import {buildCustomerLoyaltyState} from '../domain/customer-state.js';
 import type {LoyaltyProgramConfig} from '../domain/program.js';
 
 export type OrdersPaidWebhookPayload = {
+  id?: number | null;
+  admin_graphql_api_id?: string | null;
   admin_graphql_api_customer_id?: string | null;
   current_total_price?: string | null;
   customer?: {
     id?: number | null;
   } | null;
 };
+
+export function getOrdersPaidOrderGid(
+  payload: OrdersPaidWebhookPayload,
+): string | null {
+  if (payload.admin_graphql_api_id) return payload.admin_graphql_api_id;
+  if (payload.id) return `gid://shopify/Order/${payload.id}`;
+  return null;
+}
 
 export type OrdersPaidSyncPlan = {
   customerAdminId: string;
@@ -35,6 +45,7 @@ export function buildOrdersPaidSyncPlan({
   numberOfOrders,
   pointsBalance = 0,
   awardedRules,
+  lastOrderId,
   program,
 }: {
   currencyCode: string;
@@ -43,6 +54,7 @@ export function buildOrdersPaidSyncPlan({
   numberOfOrders: number;
   pointsBalance?: number;
   awardedRules?: string[];
+  lastOrderId?: string;
   program: LoyaltyProgramConfig;
 }): OrdersPaidSyncPlan {
   const loyaltyState = buildCustomerLoyaltyState({
@@ -53,6 +65,7 @@ export function buildOrdersPaidSyncPlan({
       currencyCode,
     },
     awardedRules,
+    lastOrderId,
     program,
   });
 

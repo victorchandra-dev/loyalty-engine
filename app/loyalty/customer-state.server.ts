@@ -77,12 +77,14 @@ export async function syncCustomerLoyaltyState({
   program,
   pointsBalance = 0,
   awardedRules,
+  lastOrderId,
 }: {
   admin: AdminApiContext;
   customerAdminId: string;
   program: LoyaltyProgramConfig;
   pointsBalance?: number;
   awardedRules?: string[];
+  lastOrderId?: string;
 }) {
   const metrics = await fetchCustomerSpendMetrics(admin, customerAdminId);
 
@@ -98,6 +100,7 @@ export async function syncCustomerLoyaltyState({
     numberOfOrders: metrics.numberOfOrders,
     pointsBalance,
     awardedRules,
+    lastOrderId,
     program,
   });
 
@@ -116,6 +119,7 @@ export async function syncCustomerLoyaltyStateFromMetrics({
   program,
   pointsBalance = 0,
   awardedRules,
+  lastOrderId,
 }: {
   admin: AdminApiContext;
   customerAdminId: string;
@@ -125,6 +129,7 @@ export async function syncCustomerLoyaltyStateFromMetrics({
   program: LoyaltyProgramConfig;
   pointsBalance?: number;
   awardedRules?: string[];
+  lastOrderId?: string;
 }) {
   const plan = buildOrdersPaidSyncPlan({
     currencyCode,
@@ -133,6 +138,7 @@ export async function syncCustomerLoyaltyStateFromMetrics({
     numberOfOrders,
     pointsBalance,
     awardedRules,
+    lastOrderId,
     program,
   });
 
@@ -328,6 +334,8 @@ export async function fetchCustomerPointsState(
 ): Promise<{
   pointsBalance: number;
   signupAwarded: boolean;
+  awardedRules: string[];
+  lastOrderId: string | null;
   referredBy: ReferralAttribution | null;
   referredByCredited: boolean;
 }> {
@@ -342,17 +350,21 @@ export async function fetchCustomerPointsState(
     10,
   );
 
-  // Inspect the loyalty_state JSON for an awardedRules tracker so we don't
-  // double-award one-shot rules. Older state records won't have this field;
-  // they default to "not yet awarded".
   let signupAwarded = false;
+  let awardedRules: string[] = [];
+  let lastOrderId: string | null = null;
   const stateRaw = data.customer?.stateValue?.value;
   if (stateRaw) {
     try {
-      const parsed = JSON.parse(stateRaw) as {awardedRules?: string[]};
-      signupAwarded = Boolean(parsed.awardedRules?.includes('signup'));
+      const parsed = JSON.parse(stateRaw) as {
+        awardedRules?: string[];
+        lastOrderId?: string;
+      };
+      awardedRules = parsed.awardedRules ?? [];
+      signupAwarded = awardedRules.includes('signup');
+      lastOrderId = parsed.lastOrderId ?? null;
     } catch {
-      // ignore parse errors — treat as not yet awarded
+      // ignore parse errors
     }
   }
 
@@ -377,6 +389,8 @@ export async function fetchCustomerPointsState(
   return {
     pointsBalance: Number.isFinite(balance) ? balance : 0,
     signupAwarded,
+    awardedRules,
+    lastOrderId,
     referredBy,
     referredByCredited,
   };
@@ -845,4 +859,116 @@ async function fetchActiveRedemptionPointsCost(
   } catch {
     return 0;
   }
+}
+
+// ----------------------------------------------------------------------------
+// Referral reconciliation
+// ----------------------------------------------------------------------------
+
+const UNRECONCILED_REFERRALS_QUERY = `#graphql
+  query UnreconciledReferrals($first: Int!, $after: String) {
+    customers(first: $first, after: $after) {
+      nodes {
+        id
+        referredBy: metafield(namespace: "$app", key: "loyalty_referred_by") {
+          value
+        }
+        referredByCredited: metafield(
+          namespace: "$app"
+          key: "loyalty_referred_by_credited"
+        ) {
+          value
+        }
+      }
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+    }
+  }
+` as const;
+
+type UnreconciledReferralsData = {
+  customers: {
+    nodes: Array<{
+      id: string;
+      referredBy: {value: string | null} | null;
+      referredByCredited: {value: string | null} | null;
+    }>;
+    pageInfo: {hasNextPage: boolean; endCursor: string | null};
+  };
+};
+
+export type ReconcileReferralsResult = {
+  attempted: number;
+  succeeded: number;
+  failed: Array<{refereeId: string; error: string}>;
+};
+
+/**
+ * Find customers with a pending referral credit (referredBy set,
+ * referredByCredited = false) and re-attempt the credit for each.
+ * Caps at 250 customers per run — sufficient for single-merchant scale.
+ */
+export async function reconcilePendingReferrals(
+  admin: AdminApiContext,
+  bonusPoints: number,
+): Promise<ReconcileReferralsResult> {
+  const result: ReconcileReferralsResult = {
+    attempted: 0,
+    succeeded: 0,
+    failed: [],
+  };
+
+  let cursor: string | null = null;
+  let hasMore = true;
+
+  while (hasMore && result.attempted < 250) {
+    const page: UnreconciledReferralsData = await adminGraphql<UnreconciledReferralsData>(
+      admin,
+      UNRECONCILED_REFERRALS_QUERY,
+      {first: 50, ...(cursor ? {after: cursor} : {})},
+    );
+
+    for (const node of page.customers.nodes) {
+      if (result.attempted >= 250) break;
+
+      const hasPendingReferral =
+        node.referredBy?.value &&
+        node.referredByCredited?.value !== 'true';
+
+      if (!hasPendingReferral) continue;
+
+      let referrerCustomerId: string | null = null;
+      try {
+        const parsed = JSON.parse(node.referredBy!.value!) as Partial<ReferralAttribution>;
+        referrerCustomerId = parsed.referrerCustomerId ?? null;
+      } catch {
+        // malformed referredBy — skip
+      }
+
+      if (!referrerCustomerId || referrerCustomerId === node.id) continue;
+
+      result.attempted += 1;
+      try {
+        await creditReferrerForFirstPaidOrder({
+          admin,
+          referrerId: referrerCustomerId,
+          bonusPoints,
+        });
+        await markRefereeReferralCredited({admin, refereeId: node.id});
+        result.succeeded += 1;
+      } catch (error) {
+        result.failed.push({
+          refereeId: node.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    hasMore = page.customers.pageInfo.hasNextPage;
+    cursor = page.customers.pageInfo.endCursor;
+  }
+
+  return result;
 }

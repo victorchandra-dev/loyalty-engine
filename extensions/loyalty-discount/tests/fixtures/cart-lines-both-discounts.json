@@ -4,19 +4,68 @@
     "target": "cart.lines.discounts.generate.run",
     "input": {
       "cart": {
-        "lines": [
-          {
-            "id": "gid://shopify/CartLine/0",
-            "cost": {
-              "subtotalAmount": {
-                "amount": "6.0"
+        "buyerIdentity": {
+          "customer": {
+            "amountSpent": {
+              "amount": "100.0",
+              "currencyCode": "USD"
+            },
+            "numberOfOrders": 2,
+            "activeRedemption": {
+              "jsonValue": {
+                "handle": "ten-off",
+                "rewardType": "fixed_discount",
+                "rewardValue": "10",
+                "expiresAt": null
               }
             }
           }
-        ]
+        },
+        "cost": {
+          "subtotalAmount": {
+            "amount": "100.0",
+            "currencyCode": "USD"
+          }
+        }
+      },
+      "shop": {
+        "metafield": {
+          "jsonValue": {
+            "enabled": true,
+            "program": {
+              "currencyCode": "USD",
+              "tiers": [
+                {
+                  "id": "tier-silver",
+                  "handle": "silver",
+                  "name": "Silver",
+                  "metric": "lifetime_spend",
+                  "minimumValue": 50,
+                  "order": 1
+                }
+              ],
+              "benefits": [
+                {
+                  "id": "benefit-silver",
+                  "handle": "silver-discount",
+                  "tierHandle": "silver",
+                  "name": "Silver discount",
+                  "type": "discount_percentage",
+                  "value": 10,
+                  "displayLabel": "10% OFF ORDER",
+                  "description": null,
+                  "active": true,
+                  "metadata": null
+                }
+              ],
+              "earnRules": [],
+              "redemptions": []
+            }
+          }
+        }
       },
       "discount": {
-        "discountClasses": ["PRODUCT", "ORDER", "SHIPPING"]
+        "discountClasses": ["ORDER"]
       }
     },
     "inputBytes": 126,
@@ -36,7 +85,7 @@
                 ],
                 "value": {
                   "percentage": {
-                    "value": 10.0
+                    "value": 10
                   }
                 }
               }
@@ -45,20 +94,20 @@
           }
         },
         {
-          "productDiscountsAdd": {
+          "orderDiscountsAdd": {
             "candidates": [
               {
-                "message": "20% OFF PRODUCT",
+                "message": "Reward redeemed: $10 off",
                 "targets": [
                   {
-                    "cartLine": {
-                      "id": "gid://shopify/CartLine/0"
+                    "orderSubtotal": {
+                      "excludedCartLineIds": []
                     }
                   }
                 ],
                 "value": {
-                  "percentage": {
-                    "value": 20.0
+                  "fixedAmount": {
+                    "amount": 10
                   }
                 }
               }

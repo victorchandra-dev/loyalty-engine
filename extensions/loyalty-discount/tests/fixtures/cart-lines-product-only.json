@@ -4,46 +4,32 @@
     "target": "cart.lines.discounts.generate.run",
     "input": {
       "cart": {
-        "lines": [
-          {
-            "id": "gid://shopify/CartLine/0",
-            "cost": {
-              "subtotalAmount": {
-                "amount": "100.0"
-              }
-            }
+        "buyerIdentity": {
+          "customer": {
+            "amountSpent": {
+              "amount": "100.0",
+              "currencyCode": "USD"
+            },
+            "numberOfOrders": 2,
+            "activeRedemption": null
           }
-        ]
+        },
+        "cost": {
+          "subtotalAmount": {
+            "amount": "100.0",
+            "currencyCode": "USD"
+          }
+        }
+      },
+      "shop": {
+        "metafield": null
       },
       "discount": {
         "discountClasses": ["PRODUCT"]
       }
     },
     "output": {
-      "operations": [
-        {
-          "productDiscountsAdd": {
-            "candidates": [
-              {
-                "message": "20% OFF PRODUCT",
-                "targets": [
-                  {
-                    "cartLine": {
-                      "id": "gid://shopify/CartLine/0"
-                    }
-                  }
-                ],
-                "value": {
-                  "percentage": {
-                    "value": 20.0
-                  }
-                }
-              }
-            ],
-            "selectionStrategy": "FIRST"
-          }
-        }
-      ]
+      "operations": []
     }
   }
 }

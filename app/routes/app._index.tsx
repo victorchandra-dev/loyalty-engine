@@ -11,7 +11,6 @@ import {boundary} from '@shopify/shopify-app-react-router/server';
 import {
   ConfigurationIssues,
   EarnRuleEditor,
-  EarnRulesAndRedemptions,
   OperationsGrid,
   ProgramHero,
   ProgramStatus,
