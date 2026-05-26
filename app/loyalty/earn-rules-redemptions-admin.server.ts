@@ -81,12 +81,58 @@ type MetaobjectDeleteMutationData = {
   metaobjectDelete: MetaobjectMutationPayload;
 };
 
+export const DEFAULT_EARN_RULE_SEEDS: LoyaltyEarnRuleInput[] = [
+  {
+    handle: 'signup',
+    title: 'Create an account',
+    description: 'Welcome bonus when a customer joins.',
+    action: 'signup',
+    pointsValue: 200,
+    active: true,
+  },
+  {
+    handle: 'order',
+    title: 'Place an order',
+    description: 'Earn 1 point for every whole currency unit spent.',
+    action: 'order',
+    pointsValue: null,
+    active: true,
+  },
+  {
+    handle: 'referral',
+    title: 'Refer a friend',
+    description: 'Awarded after a referred customer places their first order.',
+    action: 'referral',
+    pointsValue: 500,
+    active: true,
+  },
+];
+
+export const DEFAULT_REDEMPTION_SEEDS: LoyaltyRedemptionInput[] = [
+  {
+    handle: 'discount-10',
+    title: '$10 off your order',
+    pointsCost: 500,
+    rewardType: 'fixed_discount',
+    rewardValue: '10',
+    active: true,
+  },
+  {
+    handle: 'discount-25',
+    title: '$25 off your order',
+    pointsCost: 1000,
+    rewardType: 'fixed_discount',
+    rewardValue: '25',
+    active: true,
+  },
+];
+
 // ---- Editor entry builders ---------------------------------------------------
 
 export function buildEarnRuleEditorEntries(
   entries: MerchantMetaobjectEntry[],
 ): LoyaltyEarnRuleEditorEntry[] {
-  return entries.reduce<LoyaltyEarnRuleEditorEntry[]>((acc, entry) => {
+  const rows = entries.reduce<LoyaltyEarnRuleEditorEntry[]>((acc, entry) => {
     const title = entry.fields.title?.trim();
     const action = entry.fields.action?.trim();
     if (!title || !action) return acc;
@@ -101,12 +147,24 @@ export function buildEarnRuleEditorEntries(
     });
     return acc;
   }, []);
+
+  return rows.length > 0
+    ? rows
+    : DEFAULT_EARN_RULE_SEEDS.map((seed) => ({
+        id: null,
+        handle: seed.handle ?? null,
+        title: seed.title,
+        description: seed.description ?? '',
+        action: seed.action,
+        pointsValue: seed.pointsValue === null ? '' : String(seed.pointsValue),
+        active: seed.active ? 'true' : 'false',
+      }));
 }
 
 export function buildRedemptionEditorEntries(
   entries: MerchantMetaobjectEntry[],
 ): LoyaltyRedemptionEditorEntry[] {
-  return entries.reduce<LoyaltyRedemptionEditorEntry[]>((acc, entry) => {
+  const rows = entries.reduce<LoyaltyRedemptionEditorEntry[]>((acc, entry) => {
     const title = entry.fields.title?.trim();
     const rewardType = entry.fields.reward_type?.trim();
     const pointsCost = entry.fields.points_cost?.trim();
@@ -123,6 +181,19 @@ export function buildRedemptionEditorEntries(
     });
     return acc;
   }, []);
+
+  return rows.length > 0
+    ? rows
+    : DEFAULT_REDEMPTION_SEEDS.map((seed) => ({
+        id: null,
+        handle: seed.handle ?? null,
+        title: seed.title,
+        description: seed.description ?? '',
+        pointsCost: String(seed.pointsCost),
+        rewardType: seed.rewardType,
+        rewardValue: seed.rewardValue ?? '',
+        active: seed.active ? 'true' : 'false',
+      }));
 }
 
 // ---- Save functions ----------------------------------------------------------
@@ -165,6 +236,26 @@ export async function saveRedemptionConfiguration({
     configuration: refreshed,
     redemptions: buildRedemptionEditorEntries(refreshed.redemptionEntries),
   };
+}
+
+export async function seedDefaultEarnRulesAndRedemptions({
+  admin,
+  configuration,
+}: {
+  admin: AdminApiContext;
+  configuration: LoyaltyProgramConfiguration;
+}) {
+  if (configuration.earnRuleEntries.length === 0) {
+    await applyEarnRuleEntries(admin, configuration, DEFAULT_EARN_RULE_SEEDS);
+  }
+
+  if (configuration.redemptionEntries.length === 0) {
+    await applyRedemptionEntries(
+      admin,
+      configuration,
+      DEFAULT_REDEMPTION_SEEDS,
+    );
+  }
 }
 
 // ---- Apply (upsert + delete) -------------------------------------------------

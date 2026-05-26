@@ -15,6 +15,7 @@ import {
   syncCustomerLoyaltyState,
 } from '../loyalty/customer-state.server';
 import {fetchLoyaltyProgramConfiguration} from '../loyalty/program.server';
+import {fetchProgramEnabled} from '../loyalty/settings.server';
 import {authenticate} from '../shopify.server';
 
 export const action = async ({request}: ActionFunctionArgs) => {
@@ -32,6 +33,11 @@ export const action = async ({request}: ActionFunctionArgs) => {
   const orderGid = getOrdersPaidOrderGid(ordersPaidPayload);
 
   if (!customerAdminId) {
+    return new Response();
+  }
+
+  const {enabled} = await fetchProgramEnabled(admin);
+  if (!enabled) {
     return new Response();
   }
 

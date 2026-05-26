@@ -173,10 +173,43 @@ export async function syncCustomerLoyaltyStateFromMetrics({
   return plan;
 }
 
-const LOYALTY_STATE_DEFINITION_NAME = 'Loyalty State';
-const LOYALTY_STATE_DEFINITION_DESCRIPTION =
-  'Derived loyalty state for the customer. Maintained by the loyalty engine.';
 const CUSTOMER_ACCOUNT_READ = 'READ';
+
+/**
+ * Customer metafield definitions the loyalty engine owns and must expose to the
+ * Customer Account API. The customer-account UI extension reads all three keys
+ * (extensions/loyalty-customer-account/src/shared.js) — without a definition
+ * granting customerAccount READ for each, the API returns null and the
+ * storefront renders 0 points / 0 XP.
+ */
+const CUSTOMER_METAFIELD_DEFINITIONS: ReadonlyArray<{
+  key: string;
+  name: string;
+  description: string;
+  type: string;
+}> = [
+  {
+    key: CUSTOMER_LOYALTY_STATE_KEY,
+    name: 'Loyalty State',
+    description:
+      'Derived loyalty state for the customer. Maintained by the loyalty engine.',
+    type: 'json',
+  },
+  {
+    key: CUSTOMER_LOYALTY_POINTS_BALANCE_KEY,
+    name: 'Loyalty Points Balance',
+    description:
+      'Customer points balance. Maintained by the loyalty engine.',
+    type: 'number_integer',
+  },
+  {
+    key: CUSTOMER_LOYALTY_ACTIVE_REDEMPTION_KEY,
+    name: 'Loyalty Active Redemption',
+    description:
+      'Active redemption reserved for checkout. Maintained by the loyalty engine.',
+    type: 'json',
+  },
+];
 
 type MetafieldDefinitionByKeyData = {
   metafieldDefinitions: {
@@ -214,25 +247,25 @@ type MetafieldDefinitionUpdateData = {
 };
 
 /**
- * Idempotently ensure the $app.loyalty_state Customer metafield definition
- * exists and grants Customer Account API READ access. Without this, the
- * storefront's Customer Account API cannot read the loyalty state.
+ * Idempotently ensure a single Customer metafield definition exists and grants
+ * Customer Account API READ access.
  *
  * Strategy:
- *  - Query for an existing definition with namespace=$app key=loyalty_state
- *    on Customer.
+ *  - Query for an existing definition with namespace=$app key=<key> on Customer.
  *  - If absent, create it with customerAccount: READ.
- *  - If present but access != READ, run a definition update.
+ *  - If present but access != READ, run a definition update (no-op when already
+ *    READ — keeps repeated bootstraps idempotent).
  */
-export async function ensureCustomerLoyaltyStateDefinition(
+async function ensureOneCustomerDefinition(
   admin: AdminApiContext,
+  def: {key: string; name: string; description: string; type: string},
 ) {
   const existing = await adminGraphql<MetafieldDefinitionByKeyData>(
     admin,
     METAFIELD_DEFINITION_BY_KEY_QUERY,
     {
       namespace: APP_METAFIELD_NAMESPACE,
-      key: CUSTOMER_LOYALTY_STATE_KEY,
+      key: def.key,
       ownerType: 'CUSTOMER',
     },
   );
@@ -245,11 +278,11 @@ export async function ensureCustomerLoyaltyStateDefinition(
       METAFIELD_DEFINITION_CREATE_MUTATION,
       {
         definition: {
-          name: LOYALTY_STATE_DEFINITION_NAME,
-          description: LOYALTY_STATE_DEFINITION_DESCRIPTION,
+          name: def.name,
+          description: def.description,
           namespace: APP_METAFIELD_NAMESPACE,
-          key: CUSTOMER_LOYALTY_STATE_KEY,
-          type: 'json',
+          key: def.key,
+          type: def.type,
           ownerType: 'CUSTOMER',
           access: {
             customerAccount: CUSTOMER_ACCOUNT_READ,
@@ -260,10 +293,10 @@ export async function ensureCustomerLoyaltyStateDefinition(
 
     assertNoUserErrors(
       created.metafieldDefinitionCreate.userErrors,
-      'Failed to create loyalty_state metafield definition',
+      `Failed to create ${def.key} metafield definition`,
     );
 
-    return created.metafieldDefinitionCreate.createdDefinition;
+    return;
   }
 
   if (definition.access?.customerAccount !== CUSTOMER_ACCOUNT_READ) {
@@ -273,7 +306,7 @@ export async function ensureCustomerLoyaltyStateDefinition(
       {
         definition: {
           namespace: APP_METAFIELD_NAMESPACE,
-          key: CUSTOMER_LOYALTY_STATE_KEY,
+          key: def.key,
           ownerType: 'CUSTOMER',
           access: {
             customerAccount: CUSTOMER_ACCOUNT_READ,
@@ -284,11 +317,26 @@ export async function ensureCustomerLoyaltyStateDefinition(
 
     assertNoUserErrors(
       updated.metafieldDefinitionUpdate.userErrors,
-      'Failed to update loyalty_state metafield definition access',
+      `Failed to update ${def.key} metafield definition access`,
     );
   }
+}
 
-  return definition;
+/**
+ * Idempotently ensure every Customer metafield definition the loyalty engine
+ * exposes to the Customer Account API exists and grants READ access. Without
+ * this, the storefront's Customer Account API returns null for those keys and
+ * the customer sees 0 points / 0 XP.
+ *
+ * Runs sequentially per key (volume is small and fixed) so a partial failure
+ * surfaces with the offending key in its error.
+ */
+export async function ensureCustomerLoyaltyStateDefinition(
+  admin: AdminApiContext,
+) {
+  for (const def of CUSTOMER_METAFIELD_DEFINITIONS) {
+    await ensureOneCustomerDefinition(admin, def);
+  }
 }
 
 // ----------------------------------------------------------------------------

@@ -1,3 +1,5 @@
+import {LOYALTY_METAOBJECT_TYPES} from '../../src/domain/program.js';
+
 export const APP_METAFIELD_NAMESPACE = '$app';
 
 export const SHOP_LOYALTY_PROGRAM_SNAPSHOT_KEY = 'loyalty_program_snapshot';
@@ -5,6 +7,7 @@ export const SHOP_LOYALTY_PROGRAM_ISSUES_KEY = 'loyalty_program_issues';
 export const SHOP_LOYALTY_PROGRAM_SYNCED_AT_KEY = 'loyalty_program_synced_at';
 export const SHOP_LOYALTY_DISCOUNT_ID_KEY = 'loyalty_discount_id';
 export const SHOP_LOYALTY_PROGRAM_ENABLED_KEY = 'loyalty_program_enabled';
+export const SHOP_LOYALTY_DISPLAY_SETTINGS_KEY = 'loyalty_display_settings';
 
 export const CUSTOMER_LOYALTY_STATE_KEY = 'loyalty_state';
 export const CUSTOMER_LOYALTY_POINTS_BALANCE_KEY = 'loyalty_points_balance';
@@ -26,11 +29,16 @@ export const REDEMPTION_TTL_MS = 24 * 60 * 60 * 1000;
  * Earn rule + redemption were added to support points + redemption catalog;
  * they are read alongside tiers when building the program snapshot. See
  * docs/earn-rules-redemptions.md for the merchant-facing schema.
+ *
+ * Single source of truth: the literal values live in
+ * `src/domain/program.ts` (`LOYALTY_METAOBJECT_TYPES`); these named exports are
+ * thin aliases so the app layer does not fork the strings (audit M4).
  */
-export const LOYALTY_TIER_METAOBJECT_TYPE = 'loyalty_reward_tier';
-export const LOYALTY_BENEFIT_METAOBJECT_TYPE = 'loyalty_reward_benefit';
-export const LOYALTY_EARN_RULE_METAOBJECT_TYPE = 'loyalty_earn_rule';
-export const LOYALTY_REDEMPTION_METAOBJECT_TYPE = 'loyalty_redemption';
+export const LOYALTY_TIER_METAOBJECT_TYPE = LOYALTY_METAOBJECT_TYPES.tier;
+export const LOYALTY_BENEFIT_METAOBJECT_TYPE = LOYALTY_METAOBJECT_TYPES.benefit;
+export const LOYALTY_EARN_RULE_METAOBJECT_TYPE = LOYALTY_METAOBJECT_TYPES.earnRule;
+export const LOYALTY_REDEMPTION_METAOBJECT_TYPE =
+  LOYALTY_METAOBJECT_TYPES.redemption;
 
 /**
  * Earn-rule action codes recognised by the engine. New codes can be added

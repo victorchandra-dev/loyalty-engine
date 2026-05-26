@@ -38,7 +38,7 @@ api_version = "2026-04"
 
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
-scopes = "read_customers,write_customers,read_orders,read_discounts,write_discounts,read_metaobjects,write_metaobjects,read_metaobject_definitions,write_metaobject_definitions"
+scopes = "read_customers,write_customers,customer_read_customers,read_orders,read_discounts,write_discounts,read_metaobjects,write_metaobjects,read_metaobject_definitions,write_metaobject_definitions"
 optional_scopes = [ ]
 use_legacy_install_flow = false
 
@@ -88,6 +88,15 @@ description = "Master on/off toggle for the loyalty program. When false the disc
 
   [shop.metafields.app.loyalty_program_enabled.access]
   admin = "merchant_read"
+
+[shop.metafields.app.loyalty_display_settings]
+type = "json"
+name = "Loyalty Display Settings"
+description = "Merchant-facing display and integration settings for Hydrogen and Liquid storefront loyalty widgets."
+
+  [shop.metafields.app.loyalty_display_settings.access]
+  admin = "merchant_read"
+  storefront = "public_read"
 
 [customer.metafields.app.loyalty_state]
 type = "json"

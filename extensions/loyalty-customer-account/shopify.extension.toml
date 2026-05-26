@@ -1,0 +1,87 @@
+api_version = "2026-04"
+
+[[extensions]]
+name = "Loyalty rewards"
+handle = "loyalty-customer-account"
+type = "ui_extension"
+uid = "a95fda70-48d7-4d06-b6ec-3f6a31432a62"
+
+  # Single profile block showing the member's rewards. The B2B company/staff,
+  # order-index, order-status, order-action, and footer slots were removed:
+  # they rendered the same generic copy and multiplied fetches to the public
+  # endpoint without showing distinct data (audit C2). The personalized rewards
+  # views live in the dedicated rewards-page / order-rewards-page extensions.
+  [[extensions.targeting]]
+  target = "customer-account.profile.block.render"
+  module = "./src/ProfileBlock.js"
+
+  [extensions.capabilities]
+  network_access = true
+
+  [extensions.settings]
+
+    [[extensions.settings.fields]]
+    key = "engine_url"
+    type = "single_line_text_field"
+    name = "Loyalty engine URL"
+    description = "Public URL for the loyalty engine."
+
+    [[extensions.settings.fields]]
+    key = "shop_domain"
+    type = "single_line_text_field"
+    name = "Shop domain"
+    description = "The shop myshopify.com domain."
+
+[[extensions]]
+name = "Loyalty rewards page"
+handle = "loyalty-rewards-page"
+type = "ui_extension"
+uid = "bec9d3af-cf43-4d99-861f-f6fd3441b9aa"
+
+  [[extensions.targeting]]
+  target = "customer-account.page.render"
+  module = "./src/RewardsPage.js"
+
+  [extensions.capabilities]
+  network_access = true
+
+  [extensions.settings]
+
+    [[extensions.settings.fields]]
+    key = "engine_url"
+    type = "single_line_text_field"
+    name = "Loyalty engine URL"
+    description = "Public URL for the loyalty engine."
+
+    [[extensions.settings.fields]]
+    key = "shop_domain"
+    type = "single_line_text_field"
+    name = "Shop domain"
+    description = "The shop myshopify.com domain."
+
+[[extensions]]
+name = "Order rewards page"
+handle = "loyalty-order-rewards-page"
+type = "ui_extension"
+uid = "a9f97e25-b1fb-4913-8f75-061060c3b4ef"
+
+  [[extensions.targeting]]
+  target = "customer-account.order.page.render"
+  module = "./src/OrderRewardsPage.js"
+
+  [extensions.capabilities]
+  network_access = true
+
+  [extensions.settings]
+
+    [[extensions.settings.fields]]
+    key = "engine_url"
+    type = "single_line_text_field"
+    name = "Loyalty engine URL"
+    description = "Public URL for the loyalty engine."
+
+    [[extensions.settings.fields]]
+    key = "shop_domain"
+    type = "single_line_text_field"
+    name = "Shop domain"
+    description = "The shop myshopify.com domain."

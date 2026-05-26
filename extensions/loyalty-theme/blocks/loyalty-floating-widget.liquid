@@ -1,0 +1,65 @@
+{{ 'loyalty-theme.css' | asset_url | stylesheet_tag }}
+
+{%- comment -%}
+  Anonymous by design: this widget shows program-level config only (tiers,
+  redemptions, earn rules). The classic Liquid storefront has no signed
+  customer-identity channel, so personalized points/tier/XP are NOT shown here.
+  For per-customer data use the New Customer Accounts UI extension or a Hydrogen
+  storefront. See extensions/loyalty-theme/README.md (audit M1).
+
+  Set "Loyalty engine URL" in the block settings — there is no hard-coded
+  fallback host; the widget fails closed when it is empty (audit M3).
+{%- endcomment -%}
+
+<div
+  class="adf-loyalty-floating"
+  data-adf-loyalty="floating"
+  data-engine-url="{{ block.settings.engine_url | escape }}"
+  data-shop-domain="{{ shop.permanent_domain | escape }}"
+  data-button-text="{{ block.settings.button_text | escape }}"
+  data-position="{{ block.settings.position | escape }}"
+>
+  <button class="adf-loyalty-launcher" type="button">
+    {{ block.settings.button_text }}
+  </button>
+  <div class="adf-loyalty-popover" hidden>
+    <div class="adf-loyalty-card">
+      <p class="adf-loyalty-eyebrow">Ama Da Flow</p>
+      <h2 class="adf-loyalty-heading">Rewards</h2>
+      <p class="adf-loyalty-copy">Loading rewards...</p>
+    </div>
+  </div>
+</div>
+
+<script src="{{ 'loyalty-theme.js' | asset_url }}" defer></script>
+
+{% schema %}
+{
+  "name": "Loyalty floating widget",
+  "target": "body",
+  "settings": [
+    {
+      "type": "text",
+      "id": "engine_url",
+      "label": "Loyalty engine URL",
+      "info": "Public URL of the loyalty engine (e.g. https://your-engine.example.com). Required — the widget shows nothing if empty."
+    },
+    {
+      "type": "text",
+      "id": "button_text",
+      "label": "Button text",
+      "default": "Rewards"
+    },
+    {
+      "type": "select",
+      "id": "position",
+      "label": "Position",
+      "default": "bottom-right",
+      "options": [
+        {"value": "bottom-right", "label": "Bottom right"},
+        {"value": "bottom-left", "label": "Bottom left"}
+      ]
+    }
+  ]
+}
+{% endschema %}

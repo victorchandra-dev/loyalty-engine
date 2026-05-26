@@ -78,7 +78,8 @@
 
 .statusGrid,
 .rewardGrid,
-.actionGrid {
+.actionGrid,
+.integrationGrid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
   gap: 0.75rem;
@@ -87,7 +88,8 @@
 .heroMetric,
 .statusCard,
 .rewardCard,
-.actionCard {
+.actionCard,
+.integrationCard {
   border: 1px solid rgba(186, 191, 195, 0.5);
   border-radius: 0.75rem;
   background: rgba(255, 255, 255, 0.88);
@@ -157,6 +159,35 @@
   align-content: space-between;
   min-height: 9.5rem;
   padding: 0.875rem 1rem;
+}
+
+.integrationGrid {
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+}
+
+.integrationCard {
+  display: grid;
+  align-content: start;
+  gap: 0.65rem;
+  padding: 1rem;
+}
+
+.integrationCard p {
+  margin: 0;
+  color: #6d7175;
+  font-size: 0.84rem;
+  line-height: 1.5;
+}
+
+.codeLine {
+  display: block;
+  overflow-wrap: anywhere;
+  border-radius: 0.5rem;
+  background: #f6f6f7;
+  color: #202223;
+  padding: 0.55rem 0.65rem;
+  font-size: 0.78rem;
+  line-height: 1.4;
 }
 
 .actionCard h3 {

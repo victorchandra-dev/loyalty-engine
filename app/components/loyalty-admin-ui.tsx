@@ -198,6 +198,70 @@ export function OperationsGrid({
   );
 }
 
+export function IntegrationReadiness({
+  hydrogenEnabled,
+  liquidEnabled,
+  shopDomain,
+  hasProgram,
+  storefrontWired,
+}: {
+  hydrogenEnabled: boolean;
+  liquidEnabled: boolean;
+  shopDomain: string | null;
+  hasProgram: boolean;
+  storefrontWired: boolean;
+}) {
+  const publicEndpoint = `/api/public-loyalty-program?shop=${
+    shopDomain ?? 'example.myshopify.com'
+  }`;
+
+  return (
+    <s-section heading="Storefront channels">
+      <div className={styles.integrationGrid}>
+        <div className={styles.integrationCard}>
+          <div className={styles.statusHeader}>
+            <h3>Hydrogen</h3>
+            <s-badge tone={hydrogenEnabled && hasProgram ? 'success' : 'warning'}>
+              {hydrogenEnabled && hasProgram ? 'Ready' : 'Needs setup'}
+            </s-badge>
+          </div>
+          <p>
+            Uses Storefront API metaobjects plus Customer Account API metafields.
+            Current route: /account/loyalty.
+          </p>
+        </div>
+
+        <div className={styles.integrationCard}>
+          <div className={styles.statusHeader}>
+            <h3>Liquid</h3>
+            <s-badge tone={liquidEnabled ? 'success' : 'warning'}>
+              {liquidEnabled ? 'Endpoint on' : 'Hidden'}
+            </s-badge>
+          </div>
+          <p>
+            Themes can fetch public program JSON through the app endpoint. Use
+            this from an app proxy or theme script:
+          </p>
+          <code className={styles.codeLine}>{publicEndpoint}</code>
+        </div>
+
+        <div className={styles.integrationCard}>
+          <div className={styles.statusHeader}>
+            <h3>Checkout</h3>
+            <s-badge tone={storefrontWired ? 'success' : 'warning'}>
+              {storefrontWired ? 'Wired' : 'Pending'}
+            </s-badge>
+          </div>
+          <p>
+            Checkout rewards require at least one tier and one redemption, then
+            the automatic discount owner applies rewards.
+          </p>
+        </div>
+      </div>
+    </s-section>
+  );
+}
+
 export function TierEditor({
   tiers,
   currencyCode,

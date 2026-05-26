@@ -25,6 +25,7 @@ import {
   fetchCustomerPointsState,
   syncCustomerLoyaltyStateFromMetrics,
 } from './customer-state.server';
+import {seedDefaultEarnRulesAndRedemptions} from './earn-rules-redemptions-admin.server';
 
 const LOYALTY_DISCOUNT_TITLE = 'Loyalty Program Discount';
 const LOYALTY_DISCOUNT_FUNCTION_HANDLE = 'loyalty-discount';
@@ -334,6 +335,8 @@ export async function initializeLoyaltyProgram(admin: AdminApiContext) {
     await applyTierEntries(admin, configuration, DEFAULT_TIER_SEEDS);
   }
 
+  await seedDefaultEarnRulesAndRedemptions({admin, configuration});
+
   return reconcileLoyaltyProgram(admin);
 }
 
@@ -475,8 +478,15 @@ async function ensureLoyaltyDefinitions(admin: AdminApiContext) {
     const needsNameUpdate = currentDefinition.name !== blueprint.name;
     const needsDisplayNameUpdate =
       currentDefinition.displayNameKey !== blueprint.displayNameKey;
+    const needsStorefrontAccessUpdate =
+      currentDefinition.access?.storefront !== 'PUBLIC_READ';
 
-    if (!missingFields.length && !needsNameUpdate && !needsDisplayNameUpdate) {
+    if (
+      !missingFields.length &&
+      !needsNameUpdate &&
+      !needsDisplayNameUpdate &&
+      !needsStorefrontAccessUpdate
+    ) {
       continue;
     }
 
@@ -489,6 +499,9 @@ async function ensureLoyaltyDefinitions(admin: AdminApiContext) {
           ...(needsNameUpdate ? {name: blueprint.name} : {}),
           ...(needsDisplayNameUpdate
             ? {displayNameKey: blueprint.displayNameKey}
+            : {}),
+          ...(needsStorefrontAccessUpdate
+            ? {access: {storefront: 'PUBLIC_READ'}}
             : {}),
           ...(missingFields.length
             ? {

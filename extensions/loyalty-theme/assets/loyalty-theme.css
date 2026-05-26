@@ -1,0 +1,96 @@
+.adf-loyalty-block {
+  margin: 2rem 0;
+}
+
+.adf-loyalty-card {
+  border: 1px solid rgba(32, 34, 35, 0.16);
+  border-radius: 16px;
+  background: #ffffff;
+  color: #202223;
+  padding: 1.25rem;
+  box-shadow: 0 16px 40px rgba(32, 34, 35, 0.08);
+}
+
+.adf-loyalty-eyebrow {
+  margin: 0 0 0.35rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #6d7175;
+}
+
+.adf-loyalty-heading {
+  margin: 0;
+  font-size: clamp(1.35rem, 2vw, 1.9rem);
+  line-height: 1.2;
+}
+
+.adf-loyalty-copy,
+.adf-loyalty-list,
+.adf-loyalty-error {
+  margin: 0.75rem 0 0;
+  font-size: 0.95rem;
+  line-height: 1.55;
+}
+
+.adf-loyalty-list {
+  display: grid;
+  gap: 0.65rem;
+  padding: 0;
+  list-style: none;
+}
+
+.adf-loyalty-list-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  border-top: 1px solid rgba(32, 34, 35, 0.1);
+  padding-top: 0.65rem;
+}
+
+.adf-loyalty-points {
+  white-space: nowrap;
+  font-weight: 700;
+}
+
+.adf-loyalty-error {
+  color: #b42318;
+}
+
+.adf-loyalty-floating {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 2147483000;
+}
+
+.adf-loyalty-floating[data-position='bottom-left'] {
+  right: auto;
+  left: 1rem;
+}
+
+.adf-loyalty-launcher {
+  min-height: 44px;
+  border: 0;
+  border-radius: 999px;
+  background: #202223;
+  color: #ffffff;
+  padding: 0.75rem 1rem;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 12px 30px rgba(32, 34, 35, 0.2);
+}
+
+.adf-loyalty-popover {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 0.75rem);
+  width: min(22rem, calc(100vw - 2rem));
+}
+
+.adf-loyalty-floating[data-position='bottom-left'] .adf-loyalty-popover {
+  right: auto;
+  left: 0;
+}

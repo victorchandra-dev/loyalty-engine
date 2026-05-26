@@ -4,10 +4,20 @@ import {
   attributeReferralForCustomer,
   ReferralAttributionError,
 } from '../loyalty/customer-state.server';
-import {authenticate, unauthenticated} from '../shopify.server';
+import {
+  AuthError,
+  resolveAdminContext,
+  verifyCustomerToken,
+} from '../loyalty/engine-auth.server';
+import {
+  checkRateLimit,
+  createRateLimitHeaders,
+  getClientIdentifier,
+} from '../loyalty/rate-limiter.server';
 
-const SHARED_SECRET_HEADER = 'x-loyalty-engine-secret';
-const SHOP_DOMAIN_HEADER = 'x-shopify-shop-domain';
+// Tight per-IP limit on referral attribution to stop referral-payout spamming
+// even if the shared secret leaks (audit M2).
+const REFERRAL_RATE_LIMIT = {maxRequests: 6, windowMs: 15 * 60 * 1000};
 
 /**
  * Attribute a referral for a customer.
@@ -33,9 +43,21 @@ export const action = async ({request}: ActionFunctionArgs) => {
     return Response.json({error: 'Method not allowed'}, {status: 405});
   }
 
+  const rateLimit = checkRateLimit(
+    `attribute-referral:${getClientIdentifier(request)}`,
+    REFERRAL_RATE_LIMIT,
+  );
+  if (!rateLimit.allowed) {
+    return Response.json(
+      {error: 'Too many requests. Please try again later.'},
+      {status: 429, headers: createRateLimitHeaders(rateLimit)},
+    );
+  }
+
   let admin: AdminApiContext;
+  let authPath: 'shared-secret' | 'admin';
   try {
-    admin = await resolveAdminContext(request);
+    ({admin, authPath} = await resolveAdminContext(request));
   } catch (error) {
     if (error instanceof AuthError) {
       return Response.json({error: error.message}, {status: error.status});
@@ -66,6 +88,29 @@ export const action = async ({request}: ActionFunctionArgs) => {
     );
   }
 
+  // Per-customer authorization: the token must authorize the REFEREE (the
+  // customer being attributed). referrerId stays untrusted and is validated
+  // downstream. Admin (embedded) calls are exempt.
+  if (authPath === 'shared-secret') {
+    try {
+      verifyCustomerToken({request, subjectId: refereeId});
+    } catch (error) {
+      if (error instanceof AuthError) {
+        return Response.json({error: error.message}, {status: error.status});
+      }
+      throw error;
+    }
+  }
+
+  // Reject self-referral engine-side too, so the guard does not depend solely
+  // on attributeReferralForCustomer's own check.
+  if (refereeId === referrerId) {
+    return Response.json(
+      {error: 'A customer cannot refer themselves.'},
+      {status: 400},
+    );
+  }
+
   try {
     const attribution = await attributeReferralForCustomer({
       admin,
@@ -85,56 +130,3 @@ export const action = async ({request}: ActionFunctionArgs) => {
 export const loader = () => {
   return Response.json({error: 'Method not allowed'}, {status: 405});
 };
-
-class AuthError extends Error {
-  status: number;
-  constructor(message: string, status: number) {
-    super(message);
-    this.status = status;
-    this.name = 'AuthError';
-  }
-}
-
-async function resolveAdminContext(
-  request: Request,
-): Promise<AdminApiContext> {
-  const providedSecret = request.headers.get(SHARED_SECRET_HEADER);
-
-  // Shared-secret path — same logic as api.redeem: if the header is present,
-  // validate it strictly. Never fall through to admin auth for storefront
-  // requests (they carry no embedded session).
-  if (providedSecret !== null) {
-    const expectedSecret = process.env.LOYALTY_ENGINE_SHARED_SECRET ?? '';
-    if (!expectedSecret) {
-      throw new AuthError(
-        'LOYALTY_ENGINE_SHARED_SECRET is not configured on this server.',
-        500,
-      );
-    }
-    if (!constantTimeEquals(providedSecret, expectedSecret)) {
-      throw new AuthError('Invalid loyalty engine secret.', 401);
-    }
-    const shopDomain = request.headers.get(SHOP_DOMAIN_HEADER);
-    if (!shopDomain) {
-      throw new AuthError(
-        `${SHOP_DOMAIN_HEADER} header is required for shared-secret auth.`,
-        400,
-      );
-    }
-    const {admin} = await unauthenticated.admin(shopDomain);
-    return admin;
-  }
-
-  // Admin (embedded) path — only reached when no shared-secret header is sent.
-  const {admin} = await authenticate.admin(request);
-  return admin;
-}
-
-function constantTimeEquals(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  let mismatch = 0;
-  for (let i = 0; i < a.length; i += 1) {
-    mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  }
-  return mismatch === 0;
-}

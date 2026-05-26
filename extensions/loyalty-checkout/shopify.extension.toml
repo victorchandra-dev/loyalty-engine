@@ -1,0 +1,35 @@
+api_version = "2026-04"
+
+[[extensions]]
+name = "Loyalty checkout"
+handle = "loyalty-checkout"
+type = "ui_extension"
+uid = "a2f4c1ef-e555-4e13-a2fb-3dd25fb8a02f"
+
+  # One meaningful target per surface: a checkout block and a thank-you block.
+  # Per-line-item / header / footer / reductions slots were removed to stop the
+  # fan-out of identical "Rewards" fetches to the public endpoint (audit C2).
+  [[extensions.targeting]]
+  target = "purchase.checkout.block.render"
+  module = "./src/CheckoutBlock.js"
+
+  [[extensions.targeting]]
+  target = "purchase.thank-you.block.render"
+  module = "./src/ThankYouBlock.js"
+
+  [extensions.capabilities]
+  network_access = true
+
+  [extensions.settings]
+
+    [[extensions.settings.fields]]
+    key = "engine_url"
+    type = "single_line_text_field"
+    name = "Loyalty engine URL"
+    description = "Public URL for the loyalty engine."
+
+    [[extensions.settings.fields]]
+    key = "shop_domain"
+    type = "single_line_text_field"
+    name = "Shop domain"
+    description = "The shop myshopify.com domain."

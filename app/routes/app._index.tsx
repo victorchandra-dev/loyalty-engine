@@ -11,6 +11,7 @@ import {boundary} from '@shopify/shopify-app-react-router/server';
 import {
   ConfigurationIssues,
   EarnRuleEditor,
+  IntegrationReadiness,
   OperationsGrid,
   ProgramHero,
   ProgramStatus,
@@ -40,8 +41,15 @@ import {
   type LoyaltyRedemptionEditorEntry,
   type LoyaltyRedemptionInput,
 } from '../loyalty/earn-rules-redemptions-admin.server';
-import {fetchProgramEnabled, setProgramEnabled} from '../loyalty/settings.server';
-import {fetchLoyaltyProgramConfiguration} from '../loyalty/program.server';
+import {
+  fetchDisplaySettings,
+  fetchProgramEnabled,
+  setProgramEnabled,
+} from '../loyalty/settings.server';
+import {
+  fetchLoyaltyProgramConfiguration,
+  syncShopProgramSnapshot,
+} from '../loyalty/program.server';
 import {authenticate} from '../shopify.server';
 
 type ActionData = {
@@ -67,13 +75,16 @@ type ActionData = {
 
 export const loader = async ({request}: LoaderFunctionArgs) => {
   const {admin} = await authenticate.admin(request);
-  const [configuration, enabledState] = await Promise.all([
+  const [configuration, enabledState, displayState] = await Promise.all([
     fetchLoyaltyProgramConfiguration(admin),
     fetchProgramEnabled(admin),
+    fetchDisplaySettings(admin),
   ]);
 
   return {
     enabled: enabledState.enabled,
+    shopDomain: enabledState.shopDomain ?? displayState.shopDomain,
+    displaySettings: displayState.settings,
     currencyCode: configuration.currencyCode,
     currentDiscountId: configuration.currentDiscountId,
     hasProgram: Boolean(configuration.syncPlan.program),
@@ -197,6 +208,7 @@ export const action = async ({request}: ActionFunctionArgs): Promise<ActionData>
         const desired = formData.get('enabled') === 'true';
         const {shopId} = await fetchProgramEnabled(admin);
         await setProgramEnabled(admin, shopId, desired);
+        await syncShopProgramSnapshot(admin);
         return {
           status: 'success',
           intent,
@@ -396,6 +408,14 @@ export default function Index() {
         hasProgram={data.hasProgram}
         issueCount={data.issues.length}
         tierCount={data.sourceCounts.tiers}
+        storefrontWired={data.storefrontWired}
+      />
+
+      <IntegrationReadiness
+        hasProgram={data.hasProgram}
+        hydrogenEnabled={data.displaySettings.hydrogenEnabled}
+        liquidEnabled={data.displaySettings.liquidEnabled}
+        shopDomain={data.shopDomain}
         storefrontWired={data.storefrontWired}
       />
 

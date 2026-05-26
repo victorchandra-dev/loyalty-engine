@@ -14,7 +14,7 @@ import {
 } from './constants';
 import {adminGraphql, assertNoUserErrors} from './graphql.server';
 import {ensureCustomerLoyaltyStateDefinition} from './customer-state.server';
-import {fetchProgramEnabled} from './settings.server';
+import {fetchDisplaySettings, fetchProgramEnabled} from './settings.server';
 
 export type LoyaltyMetaobjectDefinition = {
   id: string;
@@ -120,7 +120,10 @@ export async function syncShopProgramSnapshot(admin: AdminApiContext) {
 
   // Surface the on/off toggle inside the snapshot so the discount function
   // can short-circuit without an extra metafield lookup.
-  const {enabled} = await fetchProgramEnabled(admin);
+  const [{enabled}, {settings: displaySettings}] = await Promise.all([
+    fetchProgramEnabled(admin),
+    fetchDisplaySettings(admin),
+  ]);
 
   const result = await adminGraphql<MetafieldsSetMutationData>(
     admin,
@@ -134,6 +137,7 @@ export async function syncShopProgramSnapshot(admin: AdminApiContext) {
           type: 'json',
           value: JSON.stringify({
             enabled,
+            displaySettings,
             program: configuration.syncPlan.program,
             discountConfiguration: configuration.syncPlan.discountConfiguration,
           }),

@@ -1,7 +1,18 @@
-import {Links, Meta, Outlet, Scripts, ScrollRestoration} from 'react-router';
+import {
+  Links,
+  Meta,
+  Outlet,
+  Scripts,
+  ScrollRestoration,
+  useLoaderData,
+} from 'react-router';
+
+export const loader = () => {
+  return {apiKey: process.env.SHOPIFY_API_KEY ?? ''};
+};
 
 export default function App() {
-  const apiKey = process.env.SHOPIFY_API_KEY ?? '';
+  const {apiKey} = useLoaderData<typeof loader>();
 
   return (
     <html lang="en">

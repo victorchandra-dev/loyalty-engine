@@ -46,6 +46,10 @@ export const METAFIELDS_SET_MUTATION = `#graphql
   }
 ` as const;
 
+// The metaobject `type:` literals below MUST match `LOYALTY_METAOBJECT_TYPES`
+// in ../../domain/program.ts (the single source of truth, audit M4). They are
+// inlined here because they are part of a static GraphQL document string and
+// cannot be interpolated from a const without losing codegen support.
 export const LOYALTY_PROGRAM_ADMIN_QUERY = `#graphql
   query LoyaltyProgramAdminState {
     shop {
