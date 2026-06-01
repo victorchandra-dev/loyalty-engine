@@ -36,6 +36,13 @@ api_version = "2026-04"
   topics = [ "refunds/create" ]
   uri = "/webhooks/orders-refunded"
 
+  # Mandatory GDPR/privacy compliance webhooks (handlers already implemented in
+  # app/routes/webhooks.customers.*.tsx and webhooks.shop.redact.tsx).
+  [webhooks.privacy_compliance]
+  customer_data_request_url = "/webhooks/customers/data-request"
+  customer_deletion_url = "/webhooks/customers/redact"
+  shop_deletion_url = "/webhooks/shop/redact"
+
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
 scopes = "read_customers,write_customers,customer_read_customers,read_orders,read_discounts,write_discounts,read_metaobjects,write_metaobjects,read_metaobject_definitions,write_metaobject_definitions"
