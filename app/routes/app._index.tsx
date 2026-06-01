@@ -51,6 +51,7 @@ import {
   syncShopProgramSnapshot,
 } from '../loyalty/program.server';
 import {authenticate} from '../shopify.server';
+import {getActivePlan, managedPricingUrl} from '../loyalty/billing.server';
 
 type ActionData = {
   status: 'success' | 'error';
@@ -75,15 +76,22 @@ type ActionData = {
 
 export const loader = async ({request}: LoaderFunctionArgs) => {
   const {admin} = await authenticate.admin(request);
-  const [configuration, enabledState, displayState] = await Promise.all([
+  const [configuration, enabledState, displayState, plan] = await Promise.all([
     fetchLoyaltyProgramConfiguration(admin),
     fetchProgramEnabled(admin),
     fetchDisplaySettings(admin),
+    getActivePlan(admin),
   ]);
 
   return {
     enabled: enabledState.enabled,
     shopDomain: enabledState.shopDomain ?? displayState.shopDomain,
+    isPro: plan.isPro,
+    planName: plan.planName,
+    pricingUrl: managedPricingUrl(
+      enabledState.shopDomain ?? displayState.shopDomain,
+      process.env.SHOPIFY_APP_HANDLE || 'ama-da-flow-loyalty',
+    ),
     displaySettings: displayState.settings,
     currencyCode: configuration.currencyCode,
     currentDiscountId: configuration.currentDiscountId,
