@@ -51,6 +51,8 @@ import {
   syncShopProgramSnapshot,
 } from '../loyalty/program.server';
 import {authenticate} from '../shopify.server';
+import {getActivePlan, managedPricingUrl} from '../loyalty/billing.server';
+import {exceedsTierLimit, exceedsEarnRuleLimit, FREE_TIER_MAX_TIERS, FREE_TIER_MAX_EARN_RULES} from '../../src/domain/billing.js';
 
 type ActionData = {
   status: 'success' | 'error';
@@ -64,6 +66,7 @@ type ActionData = {
     | 'toggleProgram';
   message: string;
   syncedAt: string;
+  upgradeRequired?: boolean;
   hasProgram?: boolean;
   issueCount?: number;
   tierEditorTiers?: LoyaltyTierEditorEntry[];
@@ -75,15 +78,22 @@ type ActionData = {
 
 export const loader = async ({request}: LoaderFunctionArgs) => {
   const {admin} = await authenticate.admin(request);
-  const [configuration, enabledState, displayState] = await Promise.all([
+  const [configuration, enabledState, displayState, plan] = await Promise.all([
     fetchLoyaltyProgramConfiguration(admin),
     fetchProgramEnabled(admin),
     fetchDisplaySettings(admin),
+    getActivePlan(admin),
   ]);
 
   return {
     enabled: enabledState.enabled,
     shopDomain: enabledState.shopDomain ?? displayState.shopDomain,
+    isPro: plan.isPro,
+    planName: plan.planName,
+    pricingUrl: managedPricingUrl(
+      enabledState.shopDomain ?? displayState.shopDomain,
+      process.env.SHOPIFY_APP_HANDLE || 'ama-da-flow-loyalty',
+    ),
     displaySettings: displayState.settings,
     currencyCode: configuration.currencyCode,
     currentDiscountId: configuration.currentDiscountId,
@@ -147,6 +157,17 @@ export const action = async ({request}: ActionFunctionArgs): Promise<ActionData>
       }
       case 'saveTiers': {
         const tiers = parseTierInputs(formData.get('tiersPayload'));
+        const {isPro} = await getActivePlan(admin);
+        if (exceedsTierLimit(tiers.length, isPro)) {
+          return {
+            status: 'error',
+            intent,
+            upgradeRequired: true,
+            message:
+              `The Free plan includes up to ${FREE_TIER_MAX_TIERS} reward tiers. Upgrade to Pro to add more.`,
+            syncedAt: new Date().toISOString(),
+          };
+        }
         const result = await saveTierConfiguration({admin, tiers});
 
         return buildConfigurationActionData({
@@ -178,6 +199,17 @@ export const action = async ({request}: ActionFunctionArgs): Promise<ActionData>
       }
       case 'saveEarnRules': {
         const earnRules = parseEarnRuleInputs(formData.get('earnRulesPayload'));
+        const {isPro} = await getActivePlan(admin);
+        if (exceedsEarnRuleLimit(earnRules.length, isPro)) {
+          return {
+            status: 'error',
+            intent,
+            upgradeRequired: true,
+            message:
+              `The Free plan includes up to ${FREE_TIER_MAX_EARN_RULES} earn rules. Upgrade to Pro to add more.`,
+            syncedAt: new Date().toISOString(),
+          };
+        }
         const result = await saveEarnRuleConfiguration({admin, earnRules});
 
         return {
@@ -298,6 +330,20 @@ export default function Index() {
     }
   }, [redemptionsSaveFetcher.data]);
 
+  const showTierUpgrade = !data.isPro && tiers.length >= FREE_TIER_MAX_TIERS;
+  const showEarnRuleUpgrade = !data.isPro && earnRules.length >= FREE_TIER_MAX_EARN_RULES;
+
+  const upgradeBanner = (label: string) => (
+    <s-banner tone="info">
+      <s-stack direction="inline" gap="small">
+        <s-paragraph>{label}</s-paragraph>
+        <s-link href={data.pricingUrl} target="_top">
+          Upgrade to Pro
+        </s-link>
+      </s-stack>
+    </s-banner>
+  );
+
   const saveTiers = () => {
     const formData = new FormData();
     formData.set('intent', 'saveTiers');
@@ -371,6 +417,9 @@ export default function Index() {
           }
         >
           <s-stack direction="block" gap="small">
+            <s-badge tone={data.isPro ? 'success' : 'info'}>
+              {data.isPro ? `Plan: ${data.planName ?? 'Pro'}` : 'Plan: Free'}
+            </s-badge>
             <s-paragraph>
               {optimisticEnabled
                 ? 'Customers earn points on paid orders, and tier + redemption discounts apply automatically at checkout.'
@@ -428,6 +477,11 @@ export default function Index() {
         syncProgram={syncProgram}
       />
 
+      {showTierUpgrade
+        ? upgradeBanner(`You have used all ${FREE_TIER_MAX_TIERS} Free reward tiers.`)
+        : saveFetcher.data?.upgradeRequired
+          ? upgradeBanner('That change needs the Pro plan.')
+          : null}
       <TierEditor
         currencyCode={data.currencyCode}
         onAddTier={() =>
@@ -455,6 +509,11 @@ export default function Index() {
 
       <ResolvedRewards benefits={data.benefits} />
 
+      {showEarnRuleUpgrade
+        ? upgradeBanner(`You have used all ${FREE_TIER_MAX_EARN_RULES} Free earn rules.`)
+        : earnRulesSaveFetcher.data?.upgradeRequired
+          ? upgradeBanner('That change needs the Pro plan.')
+          : null}
       <EarnRuleEditor
         earnRules={earnRules}
         saving={earnRulesSaveFetcher.state !== 'idle'}

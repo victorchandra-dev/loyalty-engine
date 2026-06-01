@@ -102,6 +102,12 @@ flyctl deploy
 
 # 3. Optional: enable error monitoring
 flyctl secrets set SENTRY_DSN=<dsn-from-sentry.io>
+
+# 4. Create Managed Pricing plans in Partner Dashboard
+#    Partners → Apps → [app] → Pricing → Managed Pricing
+#    - Free plan (no charge)
+#    - Pro plan (recurring price, 14-day trial)
+#    Then: flyctl secrets set SHOPIFY_APP_HANDLE=<app-handle>
 ```
 
 After deploying, configure GDPR webhook URLs in the Shopify Partner Dashboard:
@@ -144,7 +150,7 @@ Storefront also needs `LOYALTY_ENGINE_URL` and `LOYALTY_ENGINE_SHARED_SECRET` in
 | GDPR URLs in Partner Dashboard | Pending |
 | Privacy policy URL | Pending |
 | App listing + screenshots | Pending |
-| Billing API | Pending (required if charging merchants) |
+| Billing API | Complete — Managed Pricing + soft gate (Free: 3 tiers/3 rules, Pro: unlimited). Partner Dashboard plans + `SHOPIFY_APP_HANDLE` still need to be set. |
 
 ---
 
