@@ -4,8 +4,10 @@ import {boundary} from '@shopify/shopify-app-react-router/server';
 import {fetchLoyaltyProgramConfiguration} from '../loyalty/program.server';
 import {
   reconcilePendingReferrals,
+  awardEarnRuleToCustomer,
   type ReconcileReferralsResult,
 } from '../loyalty/customer-state.server';
+import {isManualEarnEligible} from '../loyalty/constants';
 import {adminGraphql} from '../loyalty/graphql.server';
 import {authenticate} from '../shopify.server';
 
@@ -76,14 +78,28 @@ type CustomerRow = {
 
 export const action = async ({request}: ActionFunctionArgs) => {
   const {admin} = await authenticate.admin(request);
+  const formData = await request.formData();
+  const intent = formData.get('intent');
   const configuration = await fetchLoyaltyProgramConfiguration(admin);
-  const bonusPoints =
-    configuration.syncPlan.program
-      ? (configuration.syncPlan.program.earnRules.find(
-          (r) => r.active && r.action === 'referral',
-        )?.pointsValue ?? 0)
-      : 0;
+  const program = configuration.syncPlan.program;
 
+  if (intent === 'awardEarnRule') {
+    const customerId = formData.get('customerId');
+    const ruleHandle = formData.get('ruleHandle');
+    if (typeof customerId !== 'string' || !customerId || typeof ruleHandle !== 'string' || !ruleHandle) {
+      return {award: {status: 'rejected' as const, message: 'Pick a reward to award.', customerId: typeof customerId === 'string' ? customerId : ''}};
+    }
+    if (!program) {
+      return {award: {status: 'rejected' as const, message: 'Initialize the program first.', customerId}};
+    }
+    const result = await awardEarnRuleToCustomer({admin, customerAdminId: customerId, ruleHandle, program});
+    return {award: {...result, customerId}};
+  }
+
+  // Default intent: reconcile pending referrals.
+  const bonusPoints = program
+    ? (program.earnRules.find((r) => r.active && r.action === 'referral')?.pointsValue ?? 0)
+    : 0;
   const result = await reconcilePendingReferrals(admin, bonusPoints);
   return {reconcile: result};
 };
@@ -102,6 +118,15 @@ export const loader = async ({request}: LoaderFunctionArgs) => {
   ]);
 
   const program = configuration.syncPlan.program;
+  const manualRules = program
+    ? program.earnRules
+        .filter((rule) => rule.active && isManualEarnEligible(rule.action))
+        .map((rule) => ({
+          handle: rule.handle,
+          title: rule.title,
+          pointsValue: rule.pointsValue,
+        }))
+    : [];
   const tierLabelByHandle = new Map<string, string>();
   if (program) {
     for (const tier of program.tiers) {
@@ -150,6 +175,7 @@ export const loader = async ({request}: LoaderFunctionArgs) => {
 
   return {
     rows,
+    manualRules,
     cursor: page.customers.pageInfo.hasNextPage
       ? page.customers.pageInfo.endCursor
       : null,
@@ -164,7 +190,11 @@ export default function CustomersRoute() {
   const [params] = useSearchParams();
   const currentCursor = params.get('after');
   const isReconciling = navigation.state === 'submitting';
-  const reconcileResult = actionData?.reconcile as ReconcileReferralsResult | undefined;
+  const awardResult = actionData && 'award' in actionData ? actionData.award : undefined;
+  const reconcileResult =
+    actionData && 'reconcile' in actionData
+      ? (actionData.reconcile as ReconcileReferralsResult)
+      : undefined;
 
   const totalActive = data.rows.filter((r) => r.hasActiveRedemption).length;
   const totalPoints = data.rows.reduce((sum, r) => sum + r.pointsBalance, 0);
@@ -183,6 +213,20 @@ export default function CustomersRoute() {
               Initialize the program from the Home tab to start surfacing tier
               labels here.
             </s-paragraph>
+          </s-banner>
+        ) : null}
+
+        {awardResult ? (
+          <s-banner
+            tone={
+              awardResult.status === 'awarded'
+                ? 'success'
+                : awardResult.status === 'already_awarded'
+                  ? 'info'
+                  : 'critical'
+            }
+          >
+            <s-paragraph>{awardResult.message}</s-paragraph>
           </s-banner>
         ) : null}
 
@@ -216,6 +260,7 @@ export default function CustomersRoute() {
               <s-table-header>Lifetime spend</s-table-header>
               <s-table-header>Orders</s-table-header>
               <s-table-header>Active redemption</s-table-header>
+              <s-table-header>Award points</s-table-header>
             </s-table-header-row>
             <s-table-body>
               {data.rows.map((row) => (
@@ -245,6 +290,27 @@ export default function CustomersRoute() {
                   <s-table-cell>
                     {row.hasActiveRedemption ? (
                       <s-badge tone="success">Yes</s-badge>
+                    ) : (
+                      <s-text>—</s-text>
+                    )}
+                  </s-table-cell>
+                  <s-table-cell>
+                    {data.manualRules.length > 0 ? (
+                      <Form method="post">
+                        <input type="hidden" name="intent" value="awardEarnRule" />
+                        <input type="hidden" name="customerId" value={row.id} />
+                        <s-stack direction="inline" gap="small">
+                          <s-select name="ruleHandle" label="Reward">
+                            {data.manualRules.map((rule) => (
+                              <s-option key={rule.handle} value={rule.handle}>
+                                {rule.title}
+                                {rule.pointsValue ? ` (+${rule.pointsValue})` : ''}
+                              </s-option>
+                            ))}
+                          </s-select>
+                          <s-button variant="secondary" type="submit">Award</s-button>
+                        </s-stack>
+                      </Form>
                     ) : (
                       <s-text>—</s-text>
                     )}
@@ -293,6 +359,7 @@ export default function CustomersRoute() {
         ) : null}
 
         <Form method="post">
+          <input type="hidden" name="intent" value="reconcile" />
           <s-button
             variant="secondary"
             type="submit"
