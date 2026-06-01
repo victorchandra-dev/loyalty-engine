@@ -103,3 +103,82 @@ function isTierQualified(
       return metrics.pointsBalance >= tier.minimumValue;
   }
 }
+
+/**
+ * A single earn rule, reduced to what a manual award needs. Built from
+ * LoyaltyEarnRuleConfig at the call site.
+ */
+export type ManualAwardRule = {
+  handle: string;
+  action: string;
+  pointsValue: number | null;
+  active: boolean;
+  repeatable: boolean;
+};
+
+export type ManualAwardResult = {
+  status: 'awarded' | 'already_awarded' | 'rejected';
+  reason?: string;
+  newBalance: number;
+  pointsAwarded: number;
+  newAwardedRules: string[];
+};
+
+/**
+ * Pure projection for a manual earn-rule award. Decides whether the rule can be
+ * awarded and computes the resulting balance + awardedRules ledger.
+ *
+ * - Inactive rule or non-positive pointsValue -> rejected (no change).
+ * - One-time rule (repeatable === false) already in awardedRules -> already_awarded.
+ * - Otherwise -> awarded; one-time rules append their handle to awardedRules,
+ *   repeatable rules leave awardedRules unchanged.
+ *
+ * Manual eligibility by ACTION is enforced at the call site, not here.
+ */
+export function projectManualAward({
+  rule,
+  currentBalance,
+  awardedRules,
+}: {
+  rule: ManualAwardRule;
+  currentBalance: number;
+  awardedRules: string[];
+}): ManualAwardResult {
+  if (!rule.active) {
+    return {
+      status: 'rejected',
+      reason: 'Rule is inactive',
+      newBalance: currentBalance,
+      pointsAwarded: 0,
+      newAwardedRules: awardedRules,
+    };
+  }
+
+  if (rule.pointsValue === null || rule.pointsValue <= 0) {
+    return {
+      status: 'rejected',
+      reason: 'Rule has no positive points value',
+      newBalance: currentBalance,
+      pointsAwarded: 0,
+      newAwardedRules: awardedRules,
+    };
+  }
+
+  if (!rule.repeatable && awardedRules.includes(rule.handle)) {
+    return {
+      status: 'already_awarded',
+      newBalance: currentBalance,
+      pointsAwarded: 0,
+      newAwardedRules: awardedRules,
+    };
+  }
+
+  return {
+    status: 'awarded',
+    newBalance: currentBalance + rule.pointsValue,
+    pointsAwarded: rule.pointsValue,
+    newAwardedRules: rule.repeatable
+      ? awardedRules
+      : [...new Set([...awardedRules, rule.handle])],
+  };
+}
