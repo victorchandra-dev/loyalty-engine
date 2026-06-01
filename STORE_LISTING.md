@@ -24,6 +24,18 @@ Track readiness for Partner Dashboard submission. Check items off as completed.
 - [ ] Confirm customer metafields written by the app (`loyalty_state`,
       `loyalty_points_balance`, etc.) are covered by `customers/redact`.
 
+## Billing (Shopify Managed Pricing)
+
+- [x] Managed Pricing implemented — Free + Pro plans; app checks active
+      subscription via `app/loyalty/billing.server.ts` (`getActivePlan`).
+- [x] Soft feature gate — Free capped at 3 reward tiers + 3 earn rules
+      (`src/domain/billing.ts`); enforced in `app/routes/app._index.tsx` action.
+- [ ] **Partner Dashboard: create the Free and Pro plans** (Pricing → Managed
+      Pricing). Pro = recurring price + 14-day trial.
+- [ ] Set `SHOPIFY_APP_HANDLE` in Fly secrets to match the app handle.
+- [ ] Verify on a development store: no-subscription = capped at 3 + upgrade CTA;
+      subscribing to Pro (trial) lifts the cap.
+
 ## Listing content (Partner Dashboard)
 
 - [ ] App name, tagline, and description
