@@ -52,7 +52,7 @@ import {
 } from '../loyalty/program.server';
 import {authenticate} from '../shopify.server';
 import {getActivePlan, managedPricingUrl} from '../loyalty/billing.server';
-import {exceedsTierLimit, exceedsEarnRuleLimit} from '../../src/domain/billing.js';
+import {exceedsTierLimit, exceedsEarnRuleLimit, FREE_TIER_MAX_TIERS, FREE_TIER_MAX_EARN_RULES} from '../../src/domain/billing.js';
 
 type ActionData = {
   status: 'success' | 'error';
@@ -164,7 +164,7 @@ export const action = async ({request}: ActionFunctionArgs): Promise<ActionData>
             intent,
             upgradeRequired: true,
             message:
-              'The Free plan includes up to 3 reward tiers. Upgrade to Pro to add more.',
+              `The Free plan includes up to ${FREE_TIER_MAX_TIERS} reward tiers. Upgrade to Pro to add more.`,
             syncedAt: new Date().toISOString(),
           };
         }
@@ -206,7 +206,7 @@ export const action = async ({request}: ActionFunctionArgs): Promise<ActionData>
             intent,
             upgradeRequired: true,
             message:
-              'The Free plan includes up to 3 earn rules. Upgrade to Pro to add more.',
+              `The Free plan includes up to ${FREE_TIER_MAX_EARN_RULES} earn rules. Upgrade to Pro to add more.`,
             syncedAt: new Date().toISOString(),
           };
         }
@@ -330,8 +330,8 @@ export default function Index() {
     }
   }, [redemptionsSaveFetcher.data]);
 
-  const showTierUpgrade = !data.isPro && tiers.length >= 3;
-  const showEarnRuleUpgrade = !data.isPro && earnRules.length >= 3;
+  const showTierUpgrade = !data.isPro && tiers.length >= FREE_TIER_MAX_TIERS;
+  const showEarnRuleUpgrade = !data.isPro && earnRules.length >= FREE_TIER_MAX_EARN_RULES;
 
   const upgradeBanner = (label: string) => (
     <s-banner tone="info">
@@ -478,7 +478,7 @@ export default function Index() {
       />
 
       {showTierUpgrade
-        ? upgradeBanner('You have used all 3 Free reward tiers.')
+        ? upgradeBanner(`You have used all ${FREE_TIER_MAX_TIERS} Free reward tiers.`)
         : saveFetcher.data?.upgradeRequired
           ? upgradeBanner('That change needs the Pro plan.')
           : null}
@@ -510,7 +510,7 @@ export default function Index() {
       <ResolvedRewards benefits={data.benefits} />
 
       {showEarnRuleUpgrade
-        ? upgradeBanner('You have used all 3 Free earn rules.')
+        ? upgradeBanner(`You have used all ${FREE_TIER_MAX_EARN_RULES} Free earn rules.`)
         : earnRulesSaveFetcher.data?.upgradeRequired
           ? upgradeBanner('That change needs the Pro plan.')
           : null}
