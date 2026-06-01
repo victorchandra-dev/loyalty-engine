@@ -52,6 +52,7 @@ import {
 } from '../loyalty/program.server';
 import {authenticate} from '../shopify.server';
 import {getActivePlan, managedPricingUrl} from '../loyalty/billing.server';
+import {exceedsTierLimit, exceedsEarnRuleLimit} from '../../src/domain/billing.js';
 
 type ActionData = {
   status: 'success' | 'error';
@@ -65,6 +66,7 @@ type ActionData = {
     | 'toggleProgram';
   message: string;
   syncedAt: string;
+  upgradeRequired?: boolean;
   hasProgram?: boolean;
   issueCount?: number;
   tierEditorTiers?: LoyaltyTierEditorEntry[];
@@ -155,6 +157,17 @@ export const action = async ({request}: ActionFunctionArgs): Promise<ActionData>
       }
       case 'saveTiers': {
         const tiers = parseTierInputs(formData.get('tiersPayload'));
+        const {isPro} = await getActivePlan(admin);
+        if (exceedsTierLimit(tiers.length, isPro)) {
+          return {
+            status: 'error',
+            intent,
+            upgradeRequired: true,
+            message:
+              'The Free plan includes up to 3 reward tiers. Upgrade to Pro to add more.',
+            syncedAt: new Date().toISOString(),
+          };
+        }
         const result = await saveTierConfiguration({admin, tiers});
 
         return buildConfigurationActionData({
@@ -186,6 +199,17 @@ export const action = async ({request}: ActionFunctionArgs): Promise<ActionData>
       }
       case 'saveEarnRules': {
         const earnRules = parseEarnRuleInputs(formData.get('earnRulesPayload'));
+        const {isPro} = await getActivePlan(admin);
+        if (exceedsEarnRuleLimit(earnRules.length, isPro)) {
+          return {
+            status: 'error',
+            intent,
+            upgradeRequired: true,
+            message:
+              'The Free plan includes up to 3 earn rules. Upgrade to Pro to add more.',
+            syncedAt: new Date().toISOString(),
+          };
+        }
         const result = await saveEarnRuleConfiguration({admin, earnRules});
 
         return {
