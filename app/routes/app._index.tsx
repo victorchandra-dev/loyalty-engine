@@ -330,6 +330,20 @@ export default function Index() {
     }
   }, [redemptionsSaveFetcher.data]);
 
+  const showTierUpgrade = !data.isPro && tiers.length >= 3;
+  const showEarnRuleUpgrade = !data.isPro && earnRules.length >= 3;
+
+  const upgradeBanner = (label: string) => (
+    <s-banner tone="info">
+      <s-stack direction="inline" gap="small">
+        <s-paragraph>{label}</s-paragraph>
+        <s-link href={data.pricingUrl} target="_top">
+          Upgrade to Pro
+        </s-link>
+      </s-stack>
+    </s-banner>
+  );
+
   const saveTiers = () => {
     const formData = new FormData();
     formData.set('intent', 'saveTiers');
@@ -403,6 +417,9 @@ export default function Index() {
           }
         >
           <s-stack direction="block" gap="small">
+            <s-badge tone={data.isPro ? 'success' : 'info'}>
+              {data.isPro ? `Plan: ${data.planName ?? 'Pro'}` : 'Plan: Free'}
+            </s-badge>
             <s-paragraph>
               {optimisticEnabled
                 ? 'Customers earn points on paid orders, and tier + redemption discounts apply automatically at checkout.'
@@ -460,6 +477,11 @@ export default function Index() {
         syncProgram={syncProgram}
       />
 
+      {showTierUpgrade
+        ? upgradeBanner('You have used all 3 Free reward tiers.')
+        : saveFetcher.data?.upgradeRequired
+          ? upgradeBanner('That change needs the Pro plan.')
+          : null}
       <TierEditor
         currencyCode={data.currencyCode}
         onAddTier={() =>
@@ -487,6 +509,11 @@ export default function Index() {
 
       <ResolvedRewards benefits={data.benefits} />
 
+      {showEarnRuleUpgrade
+        ? upgradeBanner('You have used all 3 Free earn rules.')
+        : earnRulesSaveFetcher.data?.upgradeRequired
+          ? upgradeBanner('That change needs the Pro plan.')
+          : null}
       <EarnRuleEditor
         earnRules={earnRules}
         saving={earnRulesSaveFetcher.state !== 'idle'}
