@@ -86,8 +86,8 @@ Set spend thresholds (e.g. 5% / 10% / 15%) and the discount applies automaticall
 at checkout — no codes for customers to remember or paste.
 
 **2. Points, referrals & redemptions**
-Customers earn points on every paid order plus bonuses for signups, referrals,
-birthdays, reviews, and social follows — then redeem them for discounts or free
+Customers earn points on every paid order, plus a signup bonus and referral rewards
+for both the referrer and the friend — then redeem them for discounts or free
 shipping right at checkout.
 
 **3. Built into the storefront & account**
@@ -107,9 +107,9 @@ checkout. No coupon codes, no manual fulfilment.
 $700, 15% at $1,500). The matching discount is applied automatically by Shopify
 Functions at checkout, so qualifying customers are rewarded instantly.
 
-**Points & earn rules** — Customers earn points on paid orders and through bonus
-actions you control: account signup, referrals, birthdays, product reviews,
-newsletter subscriptions, and Instagram/TikTok follows. Refunds reverse the points
+**Points & earn rules** — Customers earn points automatically on every paid order,
+with a one-time signup bonus on their first purchase. Set a flat points value per
+rule or award points per currency unit spent. Refunds reverse the points
 automatically, so balances stay accurate.
 
 **Redemptions at checkout** — Publish a catalog of rewards customers can redeem with
