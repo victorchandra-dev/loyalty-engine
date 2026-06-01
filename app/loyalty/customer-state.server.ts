@@ -1,4 +1,5 @@
 import type {AdminApiContext} from '@shopify/shopify-app-react-router/server';
+import * as Sentry from '@sentry/node';
 import {
   CUSTOMER_SPEND_QUERY,
   METAFIELDS_SET_MUTATION,
@@ -12,6 +13,7 @@ import {
   getOneShotEarnPoints,
 } from '../../src/domain/program.js';
 import type {LoyaltyProgramConfig} from '../../src/domain/program.js';
+import {projectManualAward, type ManualAwardRule} from '../../src/domain/customer-state.js';
 import {
   APP_METAFIELD_NAMESPACE,
   CUSTOMER_LOYALTY_ACTIVE_REDEMPTION_KEY,
@@ -20,6 +22,7 @@ import {
   CUSTOMER_LOYALTY_REFERRED_BY_KEY,
   CUSTOMER_LOYALTY_STATE_KEY,
   REDEMPTION_TTL_MS,
+  isManualEarnEligible,
 } from './constants';
 import {adminGraphql, assertNoUserErrors} from './graphql.server';
 
@@ -1019,4 +1022,97 @@ export async function reconcilePendingReferrals(
   }
 
   return result;
+}
+
+/**
+ * Manually award an earn rule's points to a single customer (Customers page).
+ * Only active, manual-eligible rules (not order/signup/referral) can be awarded.
+ * One-time rules are idempotent via the awardedRules ledger; repeatable rules
+ * can be awarded repeatedly. Preserves lastOrderId so order idempotency holds.
+ */
+export async function awardEarnRuleToCustomer({
+  admin,
+  customerAdminId,
+  ruleHandle,
+  program,
+}: {
+  admin: AdminApiContext;
+  customerAdminId: string;
+  ruleHandle: string;
+  program: LoyaltyProgramConfig;
+}): Promise<{
+  status: 'awarded' | 'already_awarded' | 'rejected';
+  message: string;
+}> {
+  const rule = program.earnRules.find(
+    (entry) => entry.handle === ruleHandle && entry.active,
+  );
+  if (!rule) {
+    return {
+      status: 'rejected',
+      message: `No active earn rule "${ruleHandle}" exists in the program.`,
+    };
+  }
+  if (!isManualEarnEligible(rule.action)) {
+    return {
+      status: 'rejected',
+      message: `"${rule.title}" (${rule.action}) is awarded automatically and cannot be granted manually.`,
+    };
+  }
+
+  try {
+    const current = await fetchCustomerPointsState(admin, customerAdminId);
+    const manualRule: ManualAwardRule = {
+      handle: rule.handle,
+      action: rule.action,
+      pointsValue: rule.pointsValue,
+      active: rule.active,
+      repeatable: rule.repeatable,
+    };
+    const projection = projectManualAward({
+      rule: manualRule,
+      currentBalance: current.pointsBalance,
+      awardedRules: current.awardedRules,
+    });
+
+    if (projection.status === 'already_awarded') {
+      return {
+        status: 'already_awarded',
+        message: `"${rule.title}" was already awarded to this customer.`,
+      };
+    }
+    if (projection.status === 'rejected') {
+      return {
+        status: 'rejected',
+        message: projection.reason ?? `"${rule.title}" cannot be awarded.`,
+      };
+    }
+
+    const synced = await syncCustomerLoyaltyState({
+      admin,
+      customerAdminId,
+      program,
+      pointsBalance: projection.newBalance,
+      awardedRules: projection.newAwardedRules,
+      lastOrderId: current.lastOrderId ?? undefined,
+    });
+
+    if (!synced) {
+      return {
+        status: 'rejected',
+        message: 'Customer has no spend metrics yet; cannot award points.',
+      };
+    }
+
+    return {
+      status: 'awarded',
+      message: `Awarded ${projection.pointsAwarded} points for "${rule.title}".`,
+    };
+  } catch (error) {
+    Sentry.captureException(error);
+    return {
+      status: 'rejected',
+      message: 'Could not award points right now. Please try again.',
+    };
+  }
 }
