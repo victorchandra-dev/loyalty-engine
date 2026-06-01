@@ -226,6 +226,11 @@ const LOYALTY_DEFINITION_BLUEPRINTS: DefinitionBlueprint[] = [
         name: 'Active',
         type: 'boolean',
       },
+      {
+        key: 'repeatable',
+        name: 'Repeatable',
+        type: 'boolean',
+      },
     ],
   },
   {

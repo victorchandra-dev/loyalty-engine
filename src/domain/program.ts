@@ -81,6 +81,7 @@ export type LoyaltyEarnRuleConfig = {
   action: LoyaltyEarnAction | string;
   pointsValue: number | null;
   active: boolean;
+  repeatable: boolean;
 };
 
 export type LoyaltyRedemptionConfig = {
@@ -359,6 +360,7 @@ export function normalizeEarnRuleEntries(entries: MerchantMetaobjectEntry[]) {
       action: action as LoyaltyEarnAction | string,
       pointsValue: getOptionalNumber(entry, 'points_value', issues),
       active: getOptionalBoolean(entry, 'active') ?? true,
+      repeatable: getOptionalBoolean(entry, 'repeatable') ?? false,
     });
   }
 
