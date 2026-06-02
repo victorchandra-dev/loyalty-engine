@@ -597,9 +597,11 @@ export function EarnRulesAndRedemptions({
           </div>
         ) : (
           <s-paragraph>
-            No earn rules published yet. Storefront uses bundled defaults
-            (signup, order, birthday, follow, review, referral) until you author
-            metaobjects of type <s-text type="strong">loyalty_earn_rule</s-text>.
+            No earn rules published yet. Storefront uses bundled defaults until
+            you author metaobjects of type{' '}
+            <s-text type="strong">loyalty_earn_rule</s-text>. order, signup, and
+            referral award points automatically; birthday, review, newsletter,
+            and social-follow rules are awarded manually from the Customers page.
           </s-paragraph>
         )}
 
@@ -864,6 +866,14 @@ function EarnRuleCard({
         >
           <s-option value="true">Active</s-option>
           <s-option value="false">Inactive</s-option>
+        </s-select>
+        <s-select
+          label="Awarding"
+          value={rule.repeatable}
+          onChange={(event: Event) => onUpdate({repeatable: getEventValue(event)})}
+        >
+          <s-option value="false">One-time per customer</s-option>
+          <s-option value="true">Repeatable</s-option>
         </s-select>
       </div>
     </div>
