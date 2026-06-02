@@ -1,12 +1,13 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
-client_id = "c5ff65b56ee569153d29aee4bb268fa6"
-name = "Ama Da Flow Loyalty Engine"
+client_id = "d8ad7388e5809ec8a46eb629fbcd5161"
+name = "LoyaltyFlow"
 application_url = "https://amadaflow-loyalty.fly.dev"
 embedded = true
 
 [build]
 automatically_update_urls_on_dev = true
+include_config_on_deploy = true
 
 [webhooks]
 api_version = "2026-04"
