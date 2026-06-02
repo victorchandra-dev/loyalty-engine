@@ -14,6 +14,7 @@ const rule = (pointsValue: number | null, active = true): LoyaltyEarnRuleConfig 
   action: 'order',
   pointsValue,
   active,
+  repeatable: false,
 });
 
 describe('getOrdersRefundedAmount', () => {

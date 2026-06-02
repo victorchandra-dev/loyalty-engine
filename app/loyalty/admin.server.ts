@@ -198,7 +198,7 @@ const LOYALTY_DEFINITION_BLUEPRINTS: DefinitionBlueprint[] = [
     type: LOYALTY_METAOBJECT_TYPES.earnRule,
     name: 'Loyalty Earn Rule',
     description:
-      'Actions that award loyalty points (signup, order, birthday, review, referral, …).',
+      'Loyalty earn rules. order/signup/referral award automatically; other actions are awarded manually from the Customers page.',
     displayNameKey: 'title',
     fieldDefinitions: [
       {
@@ -224,6 +224,11 @@ const LOYALTY_DEFINITION_BLUEPRINTS: DefinitionBlueprint[] = [
       {
         key: 'active',
         name: 'Active',
+        type: 'boolean',
+      },
+      {
+        key: 'repeatable',
+        name: 'Repeatable',
         type: 'boolean',
       },
     ],

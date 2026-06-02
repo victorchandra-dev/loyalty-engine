@@ -70,3 +70,21 @@ export const REDEMPTION_REWARD_TYPES = [
 ] as const;
 
 export type RedemptionRewardType = (typeof REDEMPTION_REWARD_TYPES)[number];
+
+/**
+ * Earn-rule actions that can be awarded manually from the Customers page.
+ * Excludes the actions that already award automatically: `order` (per paid
+ * order), `signup` (first-order projection), `referral` (referral credit).
+ */
+export const MANUAL_EARN_ELIGIBLE_ACTIONS = [
+  'birthday',
+  'follow_instagram',
+  'follow_tiktok',
+  'review',
+  'newsletter',
+  'custom',
+] as const;
+
+export function isManualEarnEligible(action: string): boolean {
+  return (MANUAL_EARN_ELIGIBLE_ACTIONS as readonly string[]).includes(action);
+}

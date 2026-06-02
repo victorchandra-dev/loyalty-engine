@@ -658,6 +658,7 @@ function parseEarnRuleInputs(
       pointsValue,
       active:
         typeof record.active === 'string' ? record.active !== 'false' : true,
+      repeatable: record.repeatable === true || record.repeatable === 'true',
     };
   });
 }
@@ -873,6 +874,7 @@ function createEmptyEarnRuleDraft(index: number): EarnRuleDraft {
     action: 'custom',
     pointsValue: '',
     active: 'true',
+    repeatable: 'false',
   };
 }
 
@@ -901,6 +903,7 @@ function stripEarnRuleClientIds(
     action: rule.action,
     pointsValue: rule.pointsValue,
     active: rule.active,
+    repeatable: rule.repeatable,
   }));
 }
 

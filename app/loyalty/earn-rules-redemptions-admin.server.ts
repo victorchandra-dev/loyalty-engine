@@ -29,6 +29,7 @@ export type LoyaltyEarnRuleEditorEntry = {
   action: string;
   pointsValue: string; // string for the form, parsed on save
   active: string; // 'true' | 'false'
+  repeatable: string; // 'true' | 'false'
 };
 
 export type LoyaltyEarnRuleInput = {
@@ -39,6 +40,7 @@ export type LoyaltyEarnRuleInput = {
   action: string;
   pointsValue: number | null;
   active: boolean;
+  repeatable: boolean;
 };
 
 export type LoyaltyRedemptionEditorEntry = {
@@ -89,6 +91,7 @@ export const DEFAULT_EARN_RULE_SEEDS: LoyaltyEarnRuleInput[] = [
     action: 'signup',
     pointsValue: 200,
     active: true,
+    repeatable: false,
   },
   {
     handle: 'order',
@@ -97,6 +100,7 @@ export const DEFAULT_EARN_RULE_SEEDS: LoyaltyEarnRuleInput[] = [
     action: 'order',
     pointsValue: null,
     active: true,
+    repeatable: false,
   },
   {
     handle: 'referral',
@@ -105,6 +109,7 @@ export const DEFAULT_EARN_RULE_SEEDS: LoyaltyEarnRuleInput[] = [
     action: 'referral',
     pointsValue: 500,
     active: true,
+    repeatable: false,
   },
 ];
 
@@ -144,6 +149,7 @@ export function buildEarnRuleEditorEntries(
       action,
       pointsValue: entry.fields.points_value?.trim() ?? '',
       active: entry.fields.active?.trim() ?? 'true',
+      repeatable: entry.fields.repeatable?.trim() ?? 'false',
     });
     return acc;
   }, []);
@@ -158,6 +164,7 @@ export function buildEarnRuleEditorEntries(
         action: seed.action,
         pointsValue: seed.pointsValue === null ? '' : String(seed.pointsValue),
         active: seed.active ? 'true' : 'false',
+        repeatable: seed.repeatable ? 'true' : 'false',
       }));
 }
 
@@ -280,6 +287,7 @@ async function applyEarnRuleEntries(
       {key: 'title', value: rule.title},
       {key: 'action', value: rule.action},
       {key: 'active', value: rule.active ? 'true' : 'false'},
+      {key: 'repeatable', value: rule.repeatable ? 'true' : 'false'},
     ];
     if (rule.description) {
       fields.push({key: 'description', value: rule.description});
@@ -421,6 +429,7 @@ function sanitizeEarnRuleInputs(rules: LoyaltyEarnRuleInput[]) {
       action: action as EarnRuleAction | string,
       pointsValue,
       active: rule.active !== false,
+      repeatable: rule.repeatable === true,
     } satisfies LoyaltyEarnRuleInput;
   });
 
