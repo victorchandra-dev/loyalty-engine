@@ -92,7 +92,7 @@ export const loader = async ({request}: LoaderFunctionArgs) => {
     planName: plan.planName,
     pricingUrl: managedPricingUrl(
       enabledState.shopDomain ?? displayState.shopDomain,
-      process.env.SHOPIFY_APP_HANDLE || 'ama-da-flow-loyalty',
+      process.env.SHOPIFY_APP_HANDLE || 'loyaltyflow',
     ),
     displaySettings: displayState.settings,
     currencyCode: configuration.currencyCode,

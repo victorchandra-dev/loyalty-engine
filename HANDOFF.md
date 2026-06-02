@@ -126,7 +126,7 @@ After deploying, configure GDPR webhook URLs in the Shopify Partner Dashboard:
 | `SHOPIFY_API_SECRET` | Fly secrets | From Partners dashboard |
 | `SHOPIFY_APP_URL` | `fly.toml` / secrets | `https://amadaflow-loyalty.fly.dev` |
 | `LOYALTY_ENGINE_SHARED_SECRET` | Fly secrets + Oxygen | `openssl rand -hex 32` |
-| `DATABASE_URL` | Fly secrets | SQLite via Fly volume in prod |
+| `DATABASE_URL` | Fly secrets | PostgreSQL (`postgresql://…`); set via `fly postgres attach` or `flyctl secrets set` |
 | `SENTRY_DSN` | Fly secrets | Optional — error monitoring |
 
 Storefront also needs `LOYALTY_ENGINE_URL` and `LOYALTY_ENGINE_SHARED_SECRET` in Oxygen environment variables.
