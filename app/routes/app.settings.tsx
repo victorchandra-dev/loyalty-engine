@@ -18,6 +18,7 @@ import {
   fetchLoyaltyProgramConfiguration,
   syncShopProgramSnapshot,
 } from '../loyalty/program.server';
+import {reconcileLoyaltyProgram} from '../loyalty/admin.server';
 import {authenticate} from '../shopify.server';
 
 type ActionData = {
@@ -65,7 +66,8 @@ export const action = async ({request}: ActionFunctionArgs): Promise<ActionData>
       const desired = formData.get('enabled') === 'true';
       const {shopId} = await fetchProgramEnabled(admin);
       await setProgramEnabled(admin, shopId, desired);
-      await syncShopProgramSnapshot(admin);
+      // Also adds or removes the tier discounts, which don't see the switch.
+      await reconcileLoyaltyProgram(admin);
       return {
         status: 'success',
         message: desired

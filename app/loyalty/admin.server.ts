@@ -617,6 +617,7 @@ export async function syncTierDiscounts(
       id: string;
       tierDiscounts: {value: string} | null;
       legacyDiscount: {value: string} | null;
+      enabled: {value: string} | null;
     };
   }>(admin, TIER_DISCOUNT_STATE_QUERY);
 
@@ -640,7 +641,10 @@ export async function syncTierDiscounts(
   };
 
   const next: TierDiscountIds = {};
-  for (const entry of program ? buildTierDiscountPlan(program) : []) {
+  // Built-in discounts don't see the program's on/off switch (the Function
+  // did), so a paused program removes them and Activate recreates them.
+  const paused = shop.enabled?.value === 'false';
+  for (const entry of program && !paused ? buildTierDiscountPlan(program) : []) {
     const previous = saved[entry.tierHandle];
     if (previous && existing.has(previous.segmentId) && existing.has(previous.discountId)) {
       await mutate(admin, SEGMENT_UPDATE_MUTATION, {id: previous.segmentId, ...segmentFields(entry)}, 'segmentUpdate', `Failed to update the ${entry.title} segment`);

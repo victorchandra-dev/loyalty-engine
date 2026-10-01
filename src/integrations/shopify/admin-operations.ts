@@ -166,6 +166,9 @@ export const TIER_DISCOUNT_STATE_QUERY = `#graphql
       legacyDiscount: metafield(namespace: "$app", key: "loyalty_discount_id") {
         value
       }
+      enabled: metafield(namespace: "$app", key: "loyalty_program_enabled") {
+        value
+      }
     }
   }
 ` as const;

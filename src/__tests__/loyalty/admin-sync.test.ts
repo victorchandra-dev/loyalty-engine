@@ -65,11 +65,12 @@ describe('Tier discounts (built-in, no Function)', () => {
     ],
   };
 
-  const state = (saved: Record<string, unknown> = {}, legacy: string | null = null) => () => ({
+  const state = (saved: Record<string, unknown> = {}, legacy: string | null = null, enabled: string | null = null) => () => ({
     shop: {
       id: 'gid://shopify/Shop/1',
       tierDiscounts: Object.keys(saved).length ? {value: JSON.stringify(saved)} : null,
       legacyDiscount: legacy ? {value: legacy} : null,
+      enabled: enabled === null ? null : {value: enabled},
     },
   });
   const created = (prefix: string) => {
@@ -162,6 +163,19 @@ describe('Tier discounts (built-in, no Function)', () => {
     expect(shopify.calls.filter((c) => c.name === 'LoyaltyAutomaticDiscountDelete').map((c) => c.variables.id)).toEqual(['gid://shopify/DiscountAutomaticNode/9']);
     expect(shopify.calls.filter((c) => c.name === 'LoyaltySegmentDelete').map((c) => c.variables.id)).toEqual(['gid://shopify/Segment/9']);
     expect(savedMap(shopify).retired).toBeUndefined();
+  });
+
+  it('removes every tier discount while the program is paused, so Pause stops discounts at checkout', async () => {
+    const saved = {
+      bronze: {segmentId: 'gid://shopify/Segment/10', discountId: 'gid://shopify/DiscountAutomaticNode/10'},
+    };
+    const shopify = fakeAdmin(responders({LoyaltyTierDiscountState: state(saved, null, 'false')}));
+
+    await syncTierDiscounts(shopify.admin as never, program);
+
+    expect(names(shopify)).not.toContain('LoyaltyTierDiscountCreate');
+    expect(shopify.calls.filter((c) => c.name === 'LoyaltyAutomaticDiscountDelete').map((c) => c.variables.id)).toEqual(['gid://shopify/DiscountAutomaticNode/10']);
+    expect(savedMap(shopify)).toEqual({});
   });
 
   it('deletes the old Function discount and its saved ID', async () => {
