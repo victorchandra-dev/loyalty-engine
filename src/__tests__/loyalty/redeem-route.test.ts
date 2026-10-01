@@ -1,5 +1,8 @@
 import {describe, it, expect, vi} from 'vitest';
-import {customerResponse, fakeAdmin, field, okWrite, snapshotResponse} from '../helpers/fakes.js';
+import {customerResponse, fakeAdmin, field, memoryPrisma, okWrite, snapshotResponse} from '../helpers/fakes.js';
+
+const prisma = memoryPrisma();
+vi.mock('../../../app/session-storage.server', () => ({prisma}));
 
 // Admin (embedded) auth path: no shared-secret header, so no customer token.
 const authenticateAdmin = vi.fn();
@@ -11,7 +14,7 @@ vi.mock('../../../app/shopify.server', () => ({
 const {action} = await import('../../../app/routes/api.redeem');
 
 function redeem(admin: unknown) {
-  authenticateAdmin.mockResolvedValueOnce({admin});
+  authenticateAdmin.mockResolvedValueOnce({admin, session: {shop: 'test.myshopify.com'}});
   return action({
     request: new Request('https://engine.test/api/redeem', {
       method: 'POST',
@@ -57,6 +60,28 @@ describe('POST /api/redeem', () => {
     expect(JSON.parse(field(write, 'loyalty_active_redemption')?.value as string)).toMatchObject({
       handle: 'discount-10', pointsCost: 500, code: body.redemption.code, discountId: 'gid://shopify/DiscountCodeNode/77',
     });
+  });
+
+  it('records the spent points and the reward code in the history', async () => {
+    prisma.events.length = 0;
+    const shopify = fakeAdmin({
+      LoyaltyProgramSnapshot: snapshotResponse(),
+      LoyaltyCustomer: () => customerResponse({balance: 600}),
+      LoyaltyRewardCodeCreate: codeCreated,
+      LoyaltyMetafieldsSet: okWrite,
+    });
+
+    const body = await (await redeem(shopify.admin)).json();
+
+    expect(prisma.events).toEqual([
+      {
+        shop: 'test.myshopify.com', customerId: 'gid://shopify/Customer/1', type: 'redeem', points: -500, balance: 100,
+        data: {
+          handle: 'discount-10', title: '$10 off', code: body.redemption.code,
+          discountId: 'gid://shopify/DiscountCodeNode/77', expiresAt: body.redemption.expiresAt,
+        },
+      },
+    ]);
   });
 
   it("deletes the code again when the points can't be saved, so no one gets a free reward", async () => {

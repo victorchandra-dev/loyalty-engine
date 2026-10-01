@@ -14,6 +14,7 @@ import {
   resolveAdminContext,
   verifyCustomerToken,
 } from '../loyalty/engine-auth.server';
+import {recordPointsEvents} from '../loyalty/points-history.server';
 
 // ponytail: no rate limit here. The only caller is the storefront server, which
 // rate-limits per shopper IP; an engine-side per-IP limit would be shared by all
@@ -46,8 +47,9 @@ export const action = async ({request}: ActionFunctionArgs) => {
 
   let admin: AdminApiContext;
   let authPath: 'shared-secret' | 'admin';
+  let shop: string;
   try {
-    ({admin, authPath} = await resolveAdminContext(request));
+    ({admin, authPath, shop} = await resolveAdminContext(request));
   } catch (error) {
     if (error instanceof AuthError) {
       return Response.json({error: error.message}, {status: error.status});
@@ -139,6 +141,13 @@ export const action = async ({request}: ActionFunctionArgs) => {
       });
       throw error;
     }
+    await recordPointsEvents(shop, [{
+      customerId: customer.id,
+      type: 'redeem',
+      points: -redemption.pointsCost,
+      balance: result.balance,
+      data: {handle: redemption.handle, title, code: redemption.code, discountId, expiresAt: redemption.expiresAt},
+    }]);
     return Response.json({ok: true, newBalance: result.balance, redemption});
   } catch (error) {
     console.error('[loyalty] redeem failed', error);

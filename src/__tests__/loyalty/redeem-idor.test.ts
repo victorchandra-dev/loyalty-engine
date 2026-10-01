@@ -22,7 +22,9 @@ const saveLoyaltyCustomer = vi.fn(async () => {});
 
 const fakeAdmin = {graphql: vi.fn()};
 const unauthenticatedAdmin = vi.fn(async () => ({admin: fakeAdmin}));
-const authenticateAdmin = vi.fn(async () => ({admin: fakeAdmin}));
+const authenticateAdmin = vi.fn(async () => ({admin: fakeAdmin, session: {shop: 'test.myshopify.com'}}));
+
+vi.mock('../../../app/loyalty/points-history.server', () => ({recordPointsEvents: vi.fn(async () => {})}));
 
 vi.mock('../../../app/loyalty/customer-state.server', () => ({
   loadProgramSnapshot: vi.fn(async () => ({enabled: true, program: {redemptions: []}})),

@@ -45,7 +45,7 @@ export type AuthPath = 'shared-secret' | 'admin';
  */
 export async function resolveAdminContext(
   request: Request,
-): Promise<{admin: AdminApiContext; authPath: AuthPath}> {
+): Promise<{admin: AdminApiContext; authPath: AuthPath; shop: string}> {
   const providedSecret = request.headers.get(SHARED_SECRET_HEADER);
 
   if (providedSecret !== null) {
@@ -67,11 +67,11 @@ export async function resolveAdminContext(
       );
     }
     const {admin} = await unauthenticated.admin(shopDomain);
-    return {admin, authPath: 'shared-secret'};
+    return {admin, authPath: 'shared-secret', shop: shopDomain};
   }
 
-  const {admin} = await authenticate.admin(request);
-  return {admin, authPath: 'admin'};
+  const {admin, session} = await authenticate.admin(request);
+  return {admin, authPath: 'admin', shop: session.shop};
 }
 
 function fromBase64Url(value: string): string {
