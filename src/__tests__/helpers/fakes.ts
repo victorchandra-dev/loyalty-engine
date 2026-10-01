@@ -1,11 +1,23 @@
 import {vi} from 'vitest';
 import type {LoyaltyProgramConfig} from '../../domain/program.js';
 
-/** In-memory ProcessedWebhook table with Prisma's duplicate-key error. */
+/**
+ * In-memory ProcessedWebhook table with Prisma's duplicate-key error, and a
+ * PointsEvent table (`events`) that tests can make fail with
+ * `pointsEvent.createMany.mockRejectedValueOnce`.
+ */
 export function memoryPrisma() {
   const keys = new Set<string>();
+  const events: Array<Record<string, unknown>> = [];
   return {
     keys,
+    events,
+    pointsEvent: {
+      createMany: vi.fn(async ({data}: {data: Array<Record<string, unknown>>}) => {
+        events.push(...data);
+        return {count: data.length};
+      }),
+    },
     processedWebhook: {
       create: vi.fn(async ({data}: {data: {key: string}}) => {
         if (keys.has(data.key)) {

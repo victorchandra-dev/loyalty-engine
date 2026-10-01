@@ -35,3 +35,21 @@ model ProcessedWebhook {
   key       String   @id
   createdAt DateTime @default(now())
 }
+
+// Every points change (and reward use), appended after the Shopify balance
+// write succeeds. Feeds a customer's history, the results page and Klaviyo.
+// type: order | signup | referral | refund | redeem | reward_used | manual.
+model PointsEvent {
+  id         String   @id @default(cuid())
+  shop       String
+  customerId String
+  type       String
+  points     Int
+  balance    Int
+  orderId    String?
+  data       Json?
+  createdAt  DateTime @default(now())
+
+  @@index([shop, customerId, createdAt])
+  @@index([shop, createdAt])
+}
