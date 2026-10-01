@@ -104,7 +104,7 @@ describe('Tier discounts (built-in, no Function)', () => {
 
     const segments = shopify.calls.filter((c) => c.name === 'LoyaltySegmentCreate').map((c) => c.variables.query);
     expect(segments).toEqual(['amount_spent >= 300 AND amount_spent < 700', 'amount_spent >= 700']);
-    const silver = shopify.calls.filter((c) => c.name === 'LoyaltyTierDiscountCreate')[1].variables.discount as Record<string, any>;
+    const silver = shopify.calls.filter((c) => c.name === 'LoyaltyTierDiscountCreate')[1].variables.discount as Record<string, unknown>;
     expect(silver).toMatchObject({
       title: 'Silver – 10% off',
       customerGets: {value: {percentage: 0.1}, items: {all: true}},

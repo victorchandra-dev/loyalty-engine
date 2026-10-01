@@ -81,12 +81,6 @@ type MetaobjectDeleteMutationData = {
   metaobjectDelete: MetaobjectMutationPayload;
 };
 
-type MetafieldsSetMutationData = {
-  metafieldsSet: {
-    userErrors: MutationUserError[];
-  };
-};
-
 type CustomersPageQueryData = {
   customers: {
     nodes: Array<{id: string}>;
@@ -586,18 +580,18 @@ async function applyTierEntries(
 /** Saved IDs of the built-in segment + discount behind each discount tier. */
 type TierDiscountIds = Record<string, {segmentId: string; discountId: string}>;
 
-type UserErrorsResult = Record<string, {userErrors: MutationUserError[]} | undefined>;
+type MutationResult = {userErrors: MutationUserError[]};
 
-async function mutate(
+async function mutate<T extends MutationResult = MutationResult>(
   admin: AdminApiContext,
   mutation: string,
   variables: Record<string, unknown>,
   root: string,
   label: string,
-) {
-  const data = await adminGraphql<UserErrorsResult & Record<string, any>>(admin, mutation, variables);
+): Promise<T> {
+  const data = await adminGraphql<Record<string, T | undefined>>(admin, mutation, variables);
   assertNoUserErrors(data[root]?.userErrors, label);
-  return data[root];
+  return data[root]!;
 }
 
 /**
@@ -655,16 +649,16 @@ export async function syncTierDiscounts(
       continue;
     }
     if (previous) await remove(previous);
-    const segment = await mutate(admin, SEGMENT_CREATE_MUTATION, segmentFields(entry), 'segmentCreate', `Failed to create the ${entry.title} segment`);
-    const segmentId = segment.segment.id as string;
-    const discount = await mutate(admin, TIER_DISCOUNT_CREATE_MUTATION, {
+    const segment = await mutate<MutationResult & {segment: {id: string}}>(admin, SEGMENT_CREATE_MUTATION, segmentFields(entry), 'segmentCreate', `Failed to create the ${entry.title} segment`);
+    const segmentId = segment.segment.id;
+    const discount = await mutate<MutationResult & {automaticDiscountNode: {id: string}}>(admin, TIER_DISCOUNT_CREATE_MUTATION, {
       discount: {
         ...tierDiscountFields(entry),
         startsAt: new Date().toISOString(),
         context: {customerSegments: {add: [segmentId]}},
       },
     }, 'discountAutomaticBasicCreate', `Failed to create the ${entry.title} discount`);
-    next[entry.tierHandle] = {segmentId, discountId: discount.automaticDiscountNode.id as string};
+    next[entry.tierHandle] = {segmentId, discountId: discount.automaticDiscountNode.id};
   }
 
   for (const [handle, ids] of Object.entries(saved)) {
