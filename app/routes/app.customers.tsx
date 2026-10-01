@@ -73,7 +73,7 @@ type CustomerRow = {
 };
 
 export const action = async ({request}: ActionFunctionArgs) => {
-  const {admin} = await authenticate.admin(request);
+  const {admin, session} = await authenticate.admin(request);
   const formData = await request.formData();
   const intent = formData.get('intent');
   const configuration = await fetchLoyaltyProgramConfiguration(admin);
@@ -87,7 +87,7 @@ export const action = async ({request}: ActionFunctionArgs) => {
   if (!program) {
     return {award: {status: 'rejected' as const, message: 'Initialize the program first.', customerId}};
   }
-  const result = await awardEarnRuleToCustomer({admin, customerAdminId: customerId, ruleHandle, program});
+  const result = await awardEarnRuleToCustomer({admin, shop: session.shop, customerAdminId: customerId, ruleHandle, program});
   return {award: {...result, customerId}};
 };
 

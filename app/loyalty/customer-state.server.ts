@@ -18,6 +18,7 @@ import {
   isManualEarnEligible,
 } from './constants';
 import {adminGraphql, assertNoUserErrors} from './graphql.server';
+import {recordPointsEvents} from './points-history.server';
 
 type MetafieldsSetMutationData = {
   metafieldsSet: {
@@ -522,11 +523,13 @@ export async function attributeReferralForCustomer({
  */
 export async function awardEarnRuleToCustomer({
   admin,
+  shop,
   customerAdminId,
   ruleHandle,
   program,
 }: {
   admin: AdminApiContext;
+  shop: string;
   customerAdminId: string;
   ruleHandle: string;
   program: LoyaltyProgramConfig;
@@ -587,6 +590,13 @@ export async function awardEarnRuleToCustomer({
       balance: projection.newBalance,
       awardedRules: projection.newAwardedRules,
     });
+    await recordPointsEvents(shop, [{
+      customerId: customer.id,
+      type: 'manual',
+      points: projection.pointsAwarded,
+      balance: projection.newBalance,
+      data: {rule: rule.handle, title: rule.title},
+    }]);
 
     return {
       status: 'awarded',
