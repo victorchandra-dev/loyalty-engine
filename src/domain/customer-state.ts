@@ -239,17 +239,21 @@ export function projectPaidOrder({
   discountCodes: string[];
 }): {
   balance: number;
+  /** The non-zero parts of this order's points, one history row each. */
+  earned: Array<{type: 'order' | 'signup' | 'referral'; points: number}>;
   awardedRules: string[];
   clearRedemption: boolean;
   referral: {referrerId: string; points: number} | null;
 } {
-  let points = computeOrderPoints({orderAmount, earnRules: program.earnRules});
+  const earned: Array<{type: 'order' | 'signup' | 'referral'; points: number}> = [];
+  const orderPoints = computeOrderPoints({orderAmount, earnRules: program.earnRules});
+  if (orderPoints > 0) earned.push({type: 'order', points: orderPoints});
   const awardedRules = [...customer.awardedRules];
 
   if (!awardedRules.includes('signup')) {
     const signup = getOneShotEarnPoints('signup', program.earnRules);
     if (signup > 0) {
-      points += signup;
+      earned.push({type: 'signup', points: signup});
       awardedRules.push('signup');
     }
   }
@@ -262,7 +266,7 @@ export function projectPaidOrder({
   ) {
     const bonus = getOneShotEarnPoints('referral', program.earnRules);
     if (bonus > 0) {
-      points += bonus;
+      earned.push({type: 'referral', points: bonus});
       referral = {referrerId: customer.referrerId, points: bonus};
     }
   }
@@ -273,8 +277,10 @@ export function projectPaidOrder({
   const clearRedemption =
     code != null && discountCodes.some((used) => used.toLowerCase() === code);
 
+  const points = earned.reduce((sum, part) => sum + part.points, 0);
   return {
     balance: Math.max(0, customer.balance + points),
+    earned,
     awardedRules,
     clearRedemption,
     referral,

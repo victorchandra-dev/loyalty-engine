@@ -80,6 +80,28 @@ describe('projectPaidOrder', () => {
     expect(result.referral).toEqual({referrerId: 'gid://shopify/Customer/9', points: 500});
   });
 
+  it('splits the points into order, signup and referral parts for the history', () => {
+    const result = projectPaidOrder({
+      customer: customer({balance: 40, awardedRules: [], referrerId: 'gid://shopify/Customer/9'}),
+      program,
+      orderAmount: 120.5,
+      discountCodes: [],
+    });
+
+    expect(result.earned).toEqual([
+      {type: 'order', points: 120},
+      {type: 'signup', points: 200},
+      {type: 'referral', points: 500},
+    ]);
+    expect(40 + result.earned.reduce((sum, part) => sum + part.points, 0)).toBe(result.balance);
+  });
+
+  it('leaves zero-point parts out of the breakdown', () => {
+    const result = projectPaidOrder({customer: customer({awardedRules: ['signup']}), program, orderAmount: 0.5, discountCodes: []});
+
+    expect(result.earned).toEqual([]);
+  });
+
   it('pays the referral only once', () => {
     const result = projectPaidOrder({
       customer: customer({awardedRules: ['signup'], referrerId: 'gid://shopify/Customer/9', referralCredited: true}),
