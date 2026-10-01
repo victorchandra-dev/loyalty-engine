@@ -86,7 +86,7 @@ export function ProgramHero({
   earnRuleCount = 0,
   redemptionCount = 0,
   issueCount,
-  currentDiscountId,
+  tierDiscountCount,
   storefrontWired = false,
 }: {
   hasProgram: boolean;
@@ -95,7 +95,7 @@ export function ProgramHero({
   earnRuleCount?: number;
   redemptionCount?: number;
   issueCount: number;
-  currentDiscountId: string | null;
+  tierDiscountCount: number;
   storefrontWired?: boolean;
 }) {
   return (
@@ -122,13 +122,13 @@ export function ProgramHero({
       <div className={styles.heroPills}>
         <div
           className={`${styles.discountPill} ${
-            currentDiscountId ? '' : styles.discountPillPending
+            tierDiscountCount ? '' : styles.discountPillPending
           }`}
         >
           <span className={styles.pulseDot} />
-          {currentDiscountId
-            ? 'Automatic discount connected'
-            : 'Discount owner pending — run Initialize program'}
+          {tierDiscountCount
+            ? `${tierDiscountCount} tier discount${tierDiscountCount === 1 ? '' : 's'} live`
+            : 'No tier discounts — give a tier a % benefit, then Sync program'}
         </div>
         <div
           className={`${styles.discountPill} ${
@@ -300,14 +300,14 @@ export function ProgramStatus({
   sourceCounts,
   definitions,
   hasProgram,
-  currentDiscountId,
+  tierDiscountCount,
   discountConfiguration,
 }: {
   currencyCode: string;
   sourceCounts: {tiers: number; benefits: number};
   definitions: {tier: TierDefinition; benefit: TierDefinition};
   hasProgram: boolean;
-  currentDiscountId: string | null;
+  tierDiscountCount: number;
   discountConfiguration: DiscountConfiguration;
 }) {
   return (
@@ -353,14 +353,14 @@ export function ProgramStatus({
           ]}
         />
         <StatusCard
-          title="Automatic discount"
-          ready={!!currentDiscountId}
+          title="Tier discounts"
+          ready={tierDiscountCount > 0}
           lines={[
             [
               'Reward tiers',
               String(discountConfiguration?.tiers.length ?? 0),
             ],
-            ['Discount id', currentDiscountId ?? 'Not created yet'],
+            ['Live at checkout', String(tierDiscountCount)],
           ]}
         />
       </div>

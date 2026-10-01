@@ -100,3 +100,42 @@ function getDiscountBenefit(
     ) ?? null
   );
 }
+
+/** One built-in automatic discount per tier that gives a percentage off. */
+export type TierDiscountPlanEntry = {
+  tierHandle: string;
+  title: string;
+  percentage: number;
+  /** Shopify customer segment query selecting this tier's customers. */
+  segmentQuery: string;
+};
+
+/**
+ * The tier discounts Shopify should run, as built-in automatic discounts
+ * limited to customer segments (custom apps can't use Functions off Plus).
+ * Each range ends where the next discount tier starts, so a customer matches
+ * exactly one and tier discounts never stack with each other.
+ *
+ * ponytail: tiers only use lifetime spend (normalizeTierEntries sets
+ * `lifetime_spend`), so the query only needs `amount_spent`. Segments count
+ * spend net of refunds; the engine's own tier uses Shopify's gross amountSpent.
+ */
+export function buildTierDiscountPlan(
+  program: LoyaltyProgramConfig,
+): TierDiscountPlanEntry[] {
+  const discounted = program.tiers
+    .map((tier) => ({tier, benefit: getDiscountBenefit(program, tier.handle)}))
+    .filter(({benefit}) => benefit?.value != null && benefit.value > 0);
+
+  return discounted.map(({tier, benefit}, index) => {
+    const next = discounted[index + 1]?.tier;
+    return {
+      tierHandle: tier.handle,
+      title: `${tier.name} – ${benefit!.displayLabel}`,
+      percentage: benefit!.value!,
+      segmentQuery: next
+        ? `amount_spent >= ${tier.minimumValue} AND amount_spent < ${next.minimumValue}`
+        : `amount_spent >= ${tier.minimumValue}`,
+    };
+  });
+}

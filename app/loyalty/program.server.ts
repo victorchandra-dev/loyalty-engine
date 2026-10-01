@@ -37,7 +37,7 @@ type LoyaltyProgramAdminQueryData = {
   shop: {
     id: string;
     currencyCode: string;
-    discountId: {
+    tierDiscounts: {
       value: string;
     } | null;
   };
@@ -99,7 +99,8 @@ export async function fetchLoyaltyProgramConfiguration(admin: AdminApiContext) {
   return {
     shopId: data.shop.id,
     currencyCode: data.shop.currencyCode,
-    currentDiscountId: data.shop.discountId?.value ?? null,
+    /** Live built-in tier discounts (see syncTierDiscounts). */
+    tierDiscountCount: Object.keys(parseJsonObject(data.shop.tierDiscounts?.value)).length,
     tierDefinition: data.tierDefinition,
     benefitDefinition: data.benefitDefinition,
     earnRuleDefinition: data.earnRuleDefinition,
@@ -163,4 +164,13 @@ export async function syncShopProgramSnapshot(admin: AdminApiContext) {
   );
 
   return configuration;
+}
+
+function parseJsonObject(value: string | null | undefined): Record<string, unknown> {
+  try {
+    const parsed = value ? (JSON.parse(value) as unknown) : null;
+    return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
 }

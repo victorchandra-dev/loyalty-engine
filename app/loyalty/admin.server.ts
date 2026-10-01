@@ -1,16 +1,27 @@
 import type {AdminApiContext} from '@shopify/shopify-app-react-router/server';
 import {
+  AUTOMATIC_DISCOUNT_DELETE_MUTATION,
   CUSTOMERS_PAGE_QUERY,
-  DISCOUNT_AUTOMATIC_APP_CREATE_MUTATION,
-  DISCOUNT_AUTOMATIC_APP_UPDATE_MUTATION,
+  METAFIELDS_DELETE_MUTATION,
   METAOBJECT_DEFINITION_CREATE_MUTATION,
   METAOBJECT_DEFINITION_UPDATE_MUTATION,
   METAOBJECT_DELETE_MUTATION,
   METAOBJECT_UPSERT_MUTATION,
   METAFIELDS_SET_MUTATION,
+  NODES_EXIST_QUERY,
+  SEGMENT_CREATE_MUTATION,
+  SEGMENT_DELETE_MUTATION,
+  SEGMENT_UPDATE_MUTATION,
+  TIER_DISCOUNT_CREATE_MUTATION,
+  TIER_DISCOUNT_STATE_QUERY,
+  TIER_DISCOUNT_UPDATE_MUTATION,
 } from '../../src/integrations/shopify/admin-operations.js';
 import {LOYALTY_METAOBJECT_TYPES} from '../../src/domain/program.js';
-import type {MerchantMetaobjectEntry} from '../../src/domain/program.js';
+import type {LoyaltyProgramConfig, MerchantMetaobjectEntry} from '../../src/domain/program.js';
+import {
+  buildTierDiscountPlan,
+  type TierDiscountPlanEntry,
+} from '../../src/domain/discount-engine.js';
 import type {LoyaltyProgramConfiguration} from './program.server';
 import {
   fetchLoyaltyProgramConfiguration,
@@ -19,6 +30,7 @@ import {
 import {
   APP_METAFIELD_NAMESPACE,
   SHOP_LOYALTY_DISCOUNT_ID_KEY,
+  SHOP_LOYALTY_TIER_DISCOUNTS_KEY,
 } from './constants';
 import {adminGraphql, assertNoUserErrors} from './graphql.server';
 import {
@@ -28,8 +40,6 @@ import {
 } from './customer-state.server';
 import {seedDefaultEarnRulesAndRedemptions} from './earn-rules-redemptions-admin.server';
 
-const LOYALTY_DISCOUNT_TITLE = 'Loyalty Program Discount';
-const LOYALTY_DISCOUNT_FUNCTION_HANDLE = 'loyalty-discount';
 const CUSTOMER_SYNC_PAGE_SIZE = 50;
 
 export type LoyaltyTierEditorEntry = {
@@ -73,21 +83,6 @@ type MetaobjectDeleteMutationData = {
 
 type MetafieldsSetMutationData = {
   metafieldsSet: {
-    userErrors: MutationUserError[];
-  };
-};
-
-type DiscountAutomaticMutationData = {
-  discountAutomaticAppCreate?: {
-    automaticAppDiscount: {
-      discountId: string;
-    } | null;
-    userErrors: MutationUserError[];
-  };
-  discountAutomaticAppUpdate?: {
-    automaticAppDiscount: {
-      discountId: string;
-    } | null;
     userErrors: MutationUserError[];
   };
 };
@@ -415,12 +410,7 @@ export async function backfillCustomerLoyaltyLevels(admin: AdminApiContext) {
 
 export async function reconcileLoyaltyProgram(admin: AdminApiContext) {
   const configuration = await syncShopProgramSnapshot(admin);
-  const discountId = await ensureAutomaticDiscount(admin, configuration);
-
-  if (discountId && discountId !== configuration.currentDiscountId) {
-    await persistDiscountId(admin, configuration.shopId, discountId);
-  }
-
+  await syncTierDiscounts(admin, configuration.syncPlan.program);
   return fetchLoyaltyProgramConfiguration(admin);
 }
 
@@ -593,113 +583,134 @@ async function applyTierEntries(
   }
 }
 
-const AUTOMATIC_DISCOUNT_EXISTS_QUERY = `#graphql
-  query LoyaltyAutomaticDiscountExists($id: ID!) {
-    discountNode(id: $id) {
-      id
-    }
-  }
-` as const;
+/** Saved IDs of the built-in segment + discount behind each discount tier. */
+type TierDiscountIds = Record<string, {segmentId: string; discountId: string}>;
 
-/**
- * The automatic discount runs the loyalty function, which applies both tier
- * discounts and redeemed rewards, so it must exist whenever a program does,
- * even if no tier gives a discount.
- */
-export async function ensureAutomaticDiscount(
+type UserErrorsResult = Record<string, {userErrors: MutationUserError[]} | undefined>;
+
+async function mutate(
   admin: AdminApiContext,
-  configuration: LoyaltyProgramConfiguration,
+  mutation: string,
+  variables: Record<string, unknown>,
+  root: string,
+  label: string,
 ) {
-  if (!configuration.syncPlan.program) {
-    return configuration.currentDiscountId;
-  }
-
-  const input = {
-    title: LOYALTY_DISCOUNT_TITLE,
-    functionHandle: LOYALTY_DISCOUNT_FUNCTION_HANDLE,
-    startsAt: new Date().toISOString(),
-    discountClasses: ['ORDER'],
-    combinesWith: {
-      orderDiscounts: false,
-      productDiscounts: false,
-      shippingDiscounts: false,
-    },
-    tags: ['loyalty', 'managed-by-app'],
-  };
-
-  // The saved ID can outlive its discount (deleted in the admin, or removed
-  // with a dev preview). Only update a discount that still exists; otherwise
-  // create a new one, and the caller saves its ID.
-  const saved = configuration.currentDiscountId
-    ? await adminGraphql<{discountNode: {id: string} | null}>(
-        admin,
-        AUTOMATIC_DISCOUNT_EXISTS_QUERY,
-        {id: configuration.currentDiscountId},
-      )
-    : null;
-
-  if (configuration.currentDiscountId && saved?.discountNode) {
-    const result = await adminGraphql<DiscountAutomaticMutationData>(
-      admin,
-      DISCOUNT_AUTOMATIC_APP_UPDATE_MUTATION,
-      {
-        id: configuration.currentDiscountId,
-        automaticAppDiscount: input,
-      },
-    );
-
-    assertNoUserErrors(
-      result.discountAutomaticAppUpdate?.userErrors,
-      'Failed to update the loyalty automatic discount',
-    );
-
-    return (
-      result.discountAutomaticAppUpdate?.automaticAppDiscount?.discountId ??
-      configuration.currentDiscountId
-    );
-  }
-
-  const result = await adminGraphql<DiscountAutomaticMutationData>(
-    admin,
-    DISCOUNT_AUTOMATIC_APP_CREATE_MUTATION,
-    {
-      automaticAppDiscount: input,
-    },
-  );
-
-  assertNoUserErrors(
-    result.discountAutomaticAppCreate?.userErrors,
-    'Failed to create the loyalty automatic discount',
-  );
-
-  return result.discountAutomaticAppCreate?.automaticAppDiscount?.discountId ?? null;
+  const data = await adminGraphql<UserErrorsResult & Record<string, any>>(admin, mutation, variables);
+  assertNoUserErrors(data[root]?.userErrors, label);
+  return data[root];
 }
 
-async function persistDiscountId(
+/**
+ * Keep Shopify's built-in discounts in step with the program's tiers: one
+ * customer segment (spend range) and one automatic % discount limited to it
+ * per discount tier. Custom apps can't run Functions on non-Plus stores, so
+ * this replaces the old loyalty-discount Function.
+ *
+ * Tier discounts combine with other order discounts so a redeemed reward code
+ * stacks on top (owner's call); the exclusive spend ranges stop tier
+ * discounts stacking with each other.
+ *
+ * ponytail: the ID map is saved once at the end. If a sync dies after creating
+ * a segment, the next sync fails on the duplicate segment name; delete that
+ * segment under Customers → Segments and sync again.
+ */
+export async function syncTierDiscounts(
   admin: AdminApiContext,
-  shopId: string,
-  discountId: string,
+  program: LoyaltyProgramConfig | null,
 ) {
-  const result = await adminGraphql<MetafieldsSetMutationData>(
-    admin,
-    METAFIELDS_SET_MUTATION,
-    {
-      metafields: [
-        {
-          ownerId: shopId,
-          namespace: APP_METAFIELD_NAMESPACE,
-          key: SHOP_LOYALTY_DISCOUNT_ID_KEY,
-          type: 'single_line_text_field',
-          value: discountId,
-        },
-      ],
-    },
+  const {shop} = await adminGraphql<{
+    shop: {
+      id: string;
+      tierDiscounts: {value: string} | null;
+      legacyDiscount: {value: string} | null;
+    };
+  }>(admin, TIER_DISCOUNT_STATE_QUERY);
+
+  const saved = parseTierDiscountIds(shop.tierDiscounts?.value);
+  const savedIds = Object.values(saved).flatMap((ids) => [ids.segmentId, ids.discountId]);
+  const existing = new Set<string>(
+    savedIds.length
+      ? (
+          await adminGraphql<{nodes: Array<{id: string} | null>}>(admin, NODES_EXIST_QUERY, {ids: savedIds})
+        ).nodes.flatMap((node) => (node ? [node.id] : []))
+      : [],
   );
 
-  assertNoUserErrors(
-    result.metafieldsSet.userErrors,
-    'Failed to persist the loyalty discount identifier',
-  );
+  const remove = async (ids: {segmentId: string; discountId: string}) => {
+    if (existing.has(ids.discountId)) {
+      await mutate(admin, AUTOMATIC_DISCOUNT_DELETE_MUTATION, {id: ids.discountId}, 'discountAutomaticDelete', 'Failed to delete a tier discount');
+    }
+    if (existing.has(ids.segmentId)) {
+      await mutate(admin, SEGMENT_DELETE_MUTATION, {id: ids.segmentId}, 'segmentDelete', 'Failed to delete a tier segment');
+    }
+  };
+
+  const next: TierDiscountIds = {};
+  for (const entry of program ? buildTierDiscountPlan(program) : []) {
+    const previous = saved[entry.tierHandle];
+    if (previous && existing.has(previous.segmentId) && existing.has(previous.discountId)) {
+      await mutate(admin, SEGMENT_UPDATE_MUTATION, {id: previous.segmentId, ...segmentFields(entry)}, 'segmentUpdate', `Failed to update the ${entry.title} segment`);
+      await mutate(admin, TIER_DISCOUNT_UPDATE_MUTATION, {id: previous.discountId, discount: tierDiscountFields(entry)}, 'discountAutomaticBasicUpdate', `Failed to update the ${entry.title} discount`);
+      next[entry.tierHandle] = previous;
+      continue;
+    }
+    if (previous) await remove(previous);
+    const segment = await mutate(admin, SEGMENT_CREATE_MUTATION, segmentFields(entry), 'segmentCreate', `Failed to create the ${entry.title} segment`);
+    const segmentId = segment.segment.id as string;
+    const discount = await mutate(admin, TIER_DISCOUNT_CREATE_MUTATION, {
+      discount: {
+        ...tierDiscountFields(entry),
+        startsAt: new Date().toISOString(),
+        context: {customerSegments: {add: [segmentId]}},
+      },
+    }, 'discountAutomaticBasicCreate', `Failed to create the ${entry.title} discount`);
+    next[entry.tierHandle] = {segmentId, discountId: discount.automaticDiscountNode.id as string};
+  }
+
+  for (const [handle, ids] of Object.entries(saved)) {
+    if (!next[handle]) await remove(ids);
+  }
+
+  // The old Function-based discount can't run off Plus; remove it for good.
+  if (shop.legacyDiscount?.value) {
+    await adminGraphql(admin, AUTOMATIC_DISCOUNT_DELETE_MUTATION, {id: shop.legacyDiscount.value}).catch(() => {});
+    await mutate(admin, METAFIELDS_DELETE_MUTATION, {
+      metafields: [{ownerId: shop.id, namespace: APP_METAFIELD_NAMESPACE, key: SHOP_LOYALTY_DISCOUNT_ID_KEY}],
+    }, 'metafieldsDelete', 'Failed to clear the old discount ID');
+  }
+
+  await mutate(admin, METAFIELDS_SET_MUTATION, {
+    metafields: [{
+      ownerId: shop.id,
+      namespace: APP_METAFIELD_NAMESPACE,
+      key: SHOP_LOYALTY_TIER_DISCOUNTS_KEY,
+      type: 'json',
+      value: JSON.stringify(next),
+    }],
+  }, 'metafieldsSet', 'Failed to save the tier discount IDs');
+
+  return next;
+}
+
+function segmentFields(entry: TierDiscountPlanEntry) {
+  return {name: `LoyaltyFlow · ${entry.title}`, query: entry.segmentQuery};
+}
+
+function tierDiscountFields(entry: TierDiscountPlanEntry) {
+  return {
+    title: entry.title,
+    customerGets: {value: {percentage: entry.percentage / 100}, items: {all: true}},
+    combinesWith: {orderDiscounts: true, productDiscounts: false, shippingDiscounts: true},
+  };
+}
+
+function parseTierDiscountIds(value: string | null | undefined): TierDiscountIds {
+  try {
+    const parsed = value ? (JSON.parse(value) as unknown) : null;
+    return parsed && typeof parsed === 'object' ? (parsed as TierDiscountIds) : {};
+  } catch {
+    return {};
+  }
 }
 
 function sanitizeTierInputs(tiers: LoyaltyTierInput[]) {

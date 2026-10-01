@@ -6,6 +6,7 @@ export const SHOP_LOYALTY_PROGRAM_SNAPSHOT_KEY = 'loyalty_program_snapshot';
 export const SHOP_LOYALTY_PROGRAM_ISSUES_KEY = 'loyalty_program_issues';
 export const SHOP_LOYALTY_PROGRAM_SYNCED_AT_KEY = 'loyalty_program_synced_at';
 export const SHOP_LOYALTY_DISCOUNT_ID_KEY = 'loyalty_discount_id';
+export const SHOP_LOYALTY_TIER_DISCOUNTS_KEY = 'loyalty_tier_discounts';
 export const SHOP_LOYALTY_PROGRAM_ENABLED_KEY = 'loyalty_program_enabled';
 export const SHOP_LOYALTY_DISPLAY_SETTINGS_KEY = 'loyalty_display_settings';
 

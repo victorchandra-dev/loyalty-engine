@@ -37,7 +37,7 @@ export const LOYALTY_PROGRAM_ADMIN_QUERY = `#graphql
     shop {
       id
       currencyCode
-      discountId: metafield(namespace: "$app", key: "loyalty_discount_id") {
+      tierDiscounts: metafield(namespace: "$app", key: "loyalty_tier_discounts") {
         value
       }
     }
@@ -156,13 +156,33 @@ export const LOYALTY_PROGRAM_ADMIN_QUERY = `#graphql
   }
 ` as const;
 
-export const DISCOUNT_AUTOMATIC_APP_CREATE_MUTATION = `#graphql
-  mutation LoyaltyAutomaticDiscountCreate($automaticAppDiscount: DiscountAutomaticAppInput!) {
-    discountAutomaticAppCreate(automaticAppDiscount: $automaticAppDiscount) {
-      automaticAppDiscount {
-        discountId
-        title
-        status
+export const TIER_DISCOUNT_STATE_QUERY = `#graphql
+  query LoyaltyTierDiscountState {
+    shop {
+      id
+      tierDiscounts: metafield(namespace: "$app", key: "loyalty_tier_discounts") {
+        value
+      }
+      legacyDiscount: metafield(namespace: "$app", key: "loyalty_discount_id") {
+        value
+      }
+    }
+  }
+` as const;
+
+export const NODES_EXIST_QUERY = `#graphql
+  query LoyaltyNodesExist($ids: [ID!]!) {
+    nodes(ids: $ids) {
+      id
+    }
+  }
+` as const;
+
+export const SEGMENT_CREATE_MUTATION = `#graphql
+  mutation LoyaltySegmentCreate($name: String!, $query: String!) {
+    segmentCreate(name: $name, query: $query) {
+      segment {
+        id
       }
       userErrors {
         field
@@ -172,13 +192,77 @@ export const DISCOUNT_AUTOMATIC_APP_CREATE_MUTATION = `#graphql
   }
 ` as const;
 
-export const DISCOUNT_AUTOMATIC_APP_UPDATE_MUTATION = `#graphql
-  mutation LoyaltyAutomaticDiscountUpdate($id: ID!, $automaticAppDiscount: DiscountAutomaticAppInput!) {
-    discountAutomaticAppUpdate(id: $id, automaticAppDiscount: $automaticAppDiscount) {
-      automaticAppDiscount {
-        discountId
-        title
-        status
+export const SEGMENT_UPDATE_MUTATION = `#graphql
+  mutation LoyaltySegmentUpdate($id: ID!, $name: String, $query: String) {
+    segmentUpdate(id: $id, name: $name, query: $query) {
+      segment {
+        id
+      }
+      userErrors {
+        field
+        message
+      }
+    }
+  }
+` as const;
+
+export const SEGMENT_DELETE_MUTATION = `#graphql
+  mutation LoyaltySegmentDelete($id: ID!) {
+    segmentDelete(id: $id) {
+      deletedSegmentId
+      userErrors {
+        field
+        message
+      }
+    }
+  }
+` as const;
+
+export const TIER_DISCOUNT_CREATE_MUTATION = `#graphql
+  mutation LoyaltyTierDiscountCreate($discount: DiscountAutomaticBasicInput!) {
+    discountAutomaticBasicCreate(automaticBasicDiscount: $discount) {
+      automaticDiscountNode {
+        id
+      }
+      userErrors {
+        field
+        message
+      }
+    }
+  }
+` as const;
+
+export const TIER_DISCOUNT_UPDATE_MUTATION = `#graphql
+  mutation LoyaltyTierDiscountUpdate($id: ID!, $discount: DiscountAutomaticBasicInput!) {
+    discountAutomaticBasicUpdate(id: $id, automaticBasicDiscount: $discount) {
+      automaticDiscountNode {
+        id
+      }
+      userErrors {
+        field
+        message
+      }
+    }
+  }
+` as const;
+
+export const AUTOMATIC_DISCOUNT_DELETE_MUTATION = `#graphql
+  mutation LoyaltyAutomaticDiscountDelete($id: ID!) {
+    discountAutomaticDelete(id: $id) {
+      deletedAutomaticDiscountId
+      userErrors {
+        field
+        message
+      }
+    }
+  }
+` as const;
+
+export const METAFIELDS_DELETE_MUTATION = `#graphql
+  mutation LoyaltyMetafieldsDelete($metafields: [MetafieldIdentifierInput!]!) {
+    metafieldsDelete(metafields: $metafields) {
+      deletedMetafields {
+        key
       }
       userErrors {
         field

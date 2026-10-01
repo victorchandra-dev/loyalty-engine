@@ -48,7 +48,7 @@ export const loader = async ({request}: LoaderFunctionArgs) => {
       earnRules: configuration.earnRuleEntries.length,
       redemptions: configuration.redemptionEntries.length,
     },
-    discountId: configuration.currentDiscountId,
+    tierDiscountCount: configuration.tierDiscountCount,
     storefrontWired:
       configuration.tierEntries.length > 0 &&
       configuration.redemptionEntries.length > 0,
@@ -189,8 +189,8 @@ export default function SettingsRoute() {
             value={String(data.sourceCounts.redemptions)}
           />
           <DetailRow
-            label="Automatic checkout discount"
-            value={data.discountId ? 'Connected' : 'Pending'}
+            label="Tier discounts at checkout"
+            value={data.tierDiscountCount ? `${data.tierDiscountCount} live` : 'None'}
           />
           <DetailRow
             label="Storefront redemption wired"

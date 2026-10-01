@@ -85,7 +85,7 @@ export const loader = async ({request}: LoaderFunctionArgs) => {
     enabled: enabledState.enabled,
     displaySettings: displayState.settings,
     currencyCode: configuration.currencyCode,
-    currentDiscountId: configuration.currentDiscountId,
+    tierDiscountCount: configuration.tierDiscountCount,
     hasProgram: Boolean(configuration.syncPlan.program),
     tiers: configuration.syncPlan.program?.tiers ?? [],
     benefits: configuration.syncPlan.program?.benefits ?? [],
@@ -412,7 +412,7 @@ export default function Index() {
         benefitCount={data.sourceCounts.benefits}
         earnRuleCount={data.sourceCounts.earnRules}
         redemptionCount={data.sourceCounts.redemptions}
-        currentDiscountId={data.currentDiscountId}
+        tierDiscountCount={data.tierDiscountCount}
         hasProgram={data.hasProgram}
         issueCount={data.issues.length}
         tierCount={data.sourceCounts.tiers}
@@ -452,7 +452,7 @@ export default function Index() {
 
       <ProgramStatus
         currencyCode={data.currencyCode}
-        currentDiscountId={data.currentDiscountId}
+        tierDiscountCount={data.tierDiscountCount}
         definitions={data.definitions}
         discountConfiguration={data.discountConfiguration}
         hasProgram={data.hasProgram}
