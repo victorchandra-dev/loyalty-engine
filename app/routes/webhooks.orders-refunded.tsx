@@ -12,6 +12,7 @@ import {
   loadProgramSnapshot,
   saveLoyaltyCustomer,
 } from '../loyalty/customer-state.server';
+import {recordPointsEvents} from '../loyalty/points-history.server';
 import {runOnce} from '../loyalty/run-once.server';
 import {authenticate} from '../shopify.server';
 
@@ -55,11 +56,19 @@ export const action = async ({request}: ActionFunctionArgs) => {
       const customer = await loadLoyaltyCustomer(admin, customerAdminId);
       if (!customer) return;
 
-      await saveLoyaltyCustomer(admin, {
-        program,
-        customer,
-        balance: Math.max(0, customer.balance - debit),
-      });
+      const balance = Math.max(0, customer.balance - debit);
+      await saveLoyaltyCustomer(admin, {program, customer, balance});
+
+      if (balance !== customer.balance) {
+        await recordPointsEvents(shop, [{
+          customerId: customer.id,
+          type: 'refund',
+          points: balance - customer.balance,
+          balance,
+          orderId: orderGid,
+          data: {refundId: refundGid},
+        }]);
+      }
     });
   } catch (error) {
     console.error(`[loyalty] refunds/create failed for ${refundGid}; Shopify will retry`);

@@ -41,6 +41,7 @@ const responders = () => ({
 describe('refunds/create webhook', () => {
   beforeEach(() => {
     prisma.keys.clear();
+    prisma.events.length = 0;
     webhook.mockReset();
   });
 
@@ -57,5 +58,22 @@ describe('refunds/create webhook', () => {
     await Promise.all([deliver(shopify.admin), deliver(shopify.admin)]);
 
     expect(shopify.writes()).toHaveLength(1);
+  });
+
+  it('records the points taken back in the history', async () => {
+    await deliver(fakeAdmin(responders()).admin);
+
+    expect(prisma.events).toEqual([
+      {
+        shop: 'test.myshopify.com', customerId: 'gid://shopify/Customer/1', type: 'refund', points: -41, balance: 59,
+        orderId: 'gid://shopify/Order/6209829119461', data: {refundId: 'gid://shopify/Refund/1088818604789'},
+      },
+    ]);
+  });
+
+  it('records only what was actually taken when the balance was lower', async () => {
+    await deliver(fakeAdmin({...responders(), LoyaltyCustomer: () => customerResponse({balance: 10})}).admin);
+
+    expect(prisma.events[0]).toMatchObject({type: 'refund', points: -10, balance: 0});
   });
 });
