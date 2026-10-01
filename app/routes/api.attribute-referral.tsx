@@ -9,15 +9,8 @@ import {
   resolveAdminContext,
   verifyCustomerToken,
 } from '../loyalty/engine-auth.server';
-import {
-  checkRateLimit,
-  createRateLimitHeaders,
-  getClientIdentifier,
-} from '../loyalty/rate-limiter.server';
 
-// Tight per-IP limit on referral attribution to stop referral-payout spamming
-// even if the shared secret leaks (audit M2).
-const REFERRAL_RATE_LIMIT = {maxRequests: 6, windowMs: 15 * 60 * 1000};
+// ponytail: no rate limit here, same reason as api.redeem.tsx.
 
 /**
  * Attribute a referral for a customer.
@@ -41,17 +34,6 @@ const REFERRAL_RATE_LIMIT = {maxRequests: 6, windowMs: 15 * 60 * 1000};
 export const action = async ({request}: ActionFunctionArgs) => {
   if (request.method !== 'POST') {
     return Response.json({error: 'Method not allowed'}, {status: 405});
-  }
-
-  const rateLimit = checkRateLimit(
-    `attribute-referral:${getClientIdentifier(request)}`,
-    REFERRAL_RATE_LIMIT,
-  );
-  if (!rateLimit.allowed) {
-    return Response.json(
-      {error: 'Too many requests. Please try again later.'},
-      {status: 429, headers: createRateLimitHeaders(rateLimit)},
-    );
   }
 
   let admin: AdminApiContext;

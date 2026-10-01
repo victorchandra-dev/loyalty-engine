@@ -17,19 +17,8 @@ uid = "a2f4c1ef-e555-4e13-a2fb-3dd25fb8a02f"
   target = "purchase.thank-you.block.render"
   module = "./src/ThankYouBlock.js"
 
-  [extensions.capabilities]
-  network_access = true
-
-  [extensions.settings]
-
-    [[extensions.settings.fields]]
-    key = "engine_url"
-    type = "single_line_text_field"
-    name = "Loyalty engine URL"
-    description = "Public URL for the loyalty engine."
-
-    [[extensions.settings.fields]]
-    key = "shop_domain"
-    type = "single_line_text_field"
-    name = "Shop domain"
-    description = "The shop myshopify.com domain."
+  # Zero-config: the program + display settings are read from the app-owned shop
+  # metafield (no engine URL to paste, no external fetch, so no network_access).
+  [[extensions.metafields]]
+  namespace = "$app"
+  key = "loyalty_program_snapshot"

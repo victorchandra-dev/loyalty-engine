@@ -9,8 +9,6 @@ import {adminGraphql, assertNoUserErrors} from './graphql.server';
 
 export type LoyaltyDisplaySettings = {
   launcherEnabled: boolean;
-  accountPageEnabled: boolean;
-  liquidEnabled: boolean;
   hydrogenEnabled: boolean;
   widgetTitle: string;
   widgetIntro: string;
@@ -22,8 +20,6 @@ export type LoyaltyDisplaySettings = {
 
 export const DEFAULT_LOYALTY_DISPLAY_SETTINGS: LoyaltyDisplaySettings = {
   launcherEnabled: true,
-  accountPageEnabled: true,
-  liquidEnabled: true,
   hydrogenEnabled: true,
   widgetTitle: 'Rewards',
   widgetIntro: 'Earn points, unlock tiers, and redeem rewards at checkout.',
@@ -210,11 +206,6 @@ export function normalizeDisplaySettings(
       value.launcherEnabled,
       defaults.launcherEnabled,
     ),
-    accountPageEnabled: parseBooleanSetting(
-      value.accountPageEnabled,
-      defaults.accountPageEnabled,
-    ),
-    liquidEnabled: parseBooleanSetting(value.liquidEnabled, defaults.liquidEnabled),
     hydrogenEnabled: parseBooleanSetting(
       value.hydrogenEnabled,
       defaults.hydrogenEnabled,

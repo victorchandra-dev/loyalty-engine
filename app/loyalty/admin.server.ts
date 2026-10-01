@@ -237,7 +237,7 @@ const LOYALTY_DEFINITION_BLUEPRINTS: DefinitionBlueprint[] = [
     type: LOYALTY_METAOBJECT_TYPES.redemption,
     name: 'Loyalty Redemption',
     description:
-      'Catalog of point redemptions (fixed discount, percent discount, free shipping).',
+      'Catalog of point redemptions (fixed or percent discount).',
     displayNameKey: 'title',
     fieldDefinitions: [
       {

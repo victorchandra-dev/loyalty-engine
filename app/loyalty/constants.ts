@@ -60,13 +60,13 @@ export const EARN_RULE_ACTIONS = [
 export type EarnRuleAction = (typeof EARN_RULE_ACTIONS)[number];
 
 /**
- * Redemption-reward types. The discount function extension applies all three
- * at checkout: fixed-amount discount, percent discount, free shipping.
+ * Redemption-reward types the discount function applies at checkout.
+ * ponytail: no free_shipping until the function has a delivery target;
+ * without one it took the points and applied nothing.
  */
 export const REDEMPTION_REWARD_TYPES = [
   'fixed_discount',
   'percent_discount',
-  'free_shipping',
 ] as const;
 
 export type RedemptionRewardType = (typeof REDEMPTION_REWARD_TYPES)[number];

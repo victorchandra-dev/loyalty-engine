@@ -179,17 +179,6 @@
   line-height: 1.5;
 }
 
-.codeLine {
-  display: block;
-  overflow-wrap: anywhere;
-  border-radius: 0.5rem;
-  background: #f6f6f7;
-  color: #202223;
-  padding: 0.55rem 0.65rem;
-  font-size: 0.78rem;
-  line-height: 1.4;
-}
-
 .actionCard h3 {
   font-size: 0.95rem;
 }

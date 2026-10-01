@@ -10,15 +10,10 @@ import {
   resolveAdminContext,
   verifyCustomerToken,
 } from '../loyalty/engine-auth.server';
-import {
-  checkRateLimit,
-  createRateLimitHeaders,
-  getClientIdentifier,
-} from '../loyalty/rate-limiter.server';
 
-// Tight per-IP limit on this loyalty mutation: a leaked shared secret must not
-// allow unbounded redemption-handle brute forcing (audit M2).
-const REDEEM_RATE_LIMIT = {maxRequests: 6, windowMs: 15 * 60 * 1000};
+// ponytail: no rate limit here. The only caller is the storefront server, which
+// rate-limits per shopper IP; an engine-side per-IP limit would be shared by all
+// shoppers. The customer token below still binds each call to one customer.
 
 /**
  * Apply a redemption for a customer.
@@ -43,17 +38,6 @@ const REDEEM_RATE_LIMIT = {maxRequests: 6, windowMs: 15 * 60 * 1000};
 export const action = async ({request}: ActionFunctionArgs) => {
   if (request.method !== 'POST') {
     return Response.json({error: 'Method not allowed'}, {status: 405});
-  }
-
-  const rateLimit = checkRateLimit(
-    `redeem:${getClientIdentifier(request)}`,
-    REDEEM_RATE_LIMIT,
-  );
-  if (!rateLimit.allowed) {
-    return Response.json(
-      {error: 'Too many requests. Please try again later.'},
-      {status: 429, headers: createRateLimitHeaders(rateLimit)},
-    );
   }
 
   let admin: AdminApiContext;

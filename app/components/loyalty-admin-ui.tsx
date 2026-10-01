@@ -200,21 +200,13 @@ export function OperationsGrid({
 
 export function IntegrationReadiness({
   hydrogenEnabled,
-  liquidEnabled,
-  shopDomain,
   hasProgram,
   storefrontWired,
 }: {
   hydrogenEnabled: boolean;
-  liquidEnabled: boolean;
-  shopDomain: string | null;
   hasProgram: boolean;
   storefrontWired: boolean;
 }) {
-  const publicEndpoint = `/api/public-loyalty-program?shop=${
-    shopDomain ?? 'example.myshopify.com'
-  }`;
-
   return (
     <s-section heading="Storefront channels">
       <div className={styles.integrationGrid}>
@@ -231,19 +223,6 @@ export function IntegrationReadiness({
           </p>
         </div>
 
-        <div className={styles.integrationCard}>
-          <div className={styles.statusHeader}>
-            <h3>Liquid</h3>
-            <s-badge tone={liquidEnabled ? 'success' : 'warning'}>
-              {liquidEnabled ? 'Endpoint on' : 'Hidden'}
-            </s-badge>
-          </div>
-          <p>
-            Themes can fetch public program JSON through the app endpoint. Use
-            this from an app proxy or theme script:
-          </p>
-          <code className={styles.codeLine}>{publicEndpoint}</code>
-        </div>
 
         <div className={styles.integrationCard}>
           <div className={styles.statusHeader}>
@@ -633,7 +612,7 @@ export function EarnRulesAndRedemptions({
         ) : (
           <s-paragraph>
             No redemptions published yet. Storefront uses bundled defaults ($10,
-            $25, $60 off, free shipping) until you author metaobjects of type{' '}
+            $25, $60 off) until you author metaobjects of type{' '}
             <s-text type="strong">loyalty_redemption</s-text>.
           </s-paragraph>
         )}
@@ -796,7 +775,6 @@ const EARN_RULE_ACTION_CHOICES = [
 const REDEMPTION_REWARD_CHOICES = [
   {value: 'fixed_discount', label: 'Fixed-amount discount'},
   {value: 'percent_discount', label: 'Percent discount'},
-  {value: 'free_shipping', label: 'Free shipping'},
 ] as const;
 
 function EarnRuleCard({

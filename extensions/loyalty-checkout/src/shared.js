@@ -1,34 +1,21 @@
-import {normalizeUrl, readJson} from './utils.js';
+import {readShopSnapshot} from './utils.js';
 
-const REQUEST_TIMEOUT_MS = 8000;
-
-export async function loadProgram() {
-  const settings = getSettings();
-  // Fail closed: without an engine URL and shop domain there is no safe default
-  // to fall back to, so surface a clear error instead of guessing a host
-  // (audit M3).
-  if (!settings.engineUrl || !settings.shopDomain) {
+// Zero-config: the program snapshot is delivered as the app-owned shop metafield
+// declared in shopify.extension.toml ($app:loyalty_program_snapshot) and read via
+// shopify.appMetafields — no engine URL, no shop domain, no network fetch.
+export function loadProgram() {
+  const snapshot = readShopSnapshot();
+  if (!snapshot) {
+    // eslint-disable-next-line no-undef
+    const entries = globalThis.shopify?.appMetafields?.value ?? [];
+    const summary = entries
+      .map((e) => `${e?.target?.type}:${e?.metafield?.key}`)
+      .join(', ');
     throw new Error(
-      'Loyalty block is not configured (engine URL or shop domain missing).',
+      `Loyalty rewards unavailable. appMetafields(${entries.length})=[${summary}]`,
     );
   }
-
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-
-  try {
-    const response = await fetch(
-      `${settings.engineUrl}/api/public-loyalty-program?shop=${encodeURIComponent(settings.shopDomain)}`,
-      {headers: {Accept: 'application/json'}, signal: controller.signal},
-    );
-    const payload = await readJson(response);
-    if (!response.ok) {
-      throw new Error(payload.error || 'Loyalty rewards could not load.');
-    }
-    return payload;
-  } finally {
-    clearTimeout(timeout);
-  }
+  return snapshot;
 }
 
 export function renderSection({loadingText = 'Loading rewards...'} = {}) {
@@ -122,15 +109,4 @@ export async function renderSlot(renderer, options = {}) {
 
 function activeItems(items) {
   return Array.isArray(items) ? items.filter((item) => item.active !== false) : [];
-}
-
-function getSettings() {
-  // globalThis is an ES2020 global; the shared eslint env predates it. Used
-  // (not bare `shopify`) so an absent runtime binding is safe.
-  // eslint-disable-next-line no-undef
-  const settings = globalThis.shopify?.settings?.current ?? {};
-  return {
-    engineUrl: normalizeUrl(settings.engine_url),
-    shopDomain: (settings.shop_domain || '').trim(),
-  };
 }

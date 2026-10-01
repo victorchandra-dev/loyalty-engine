@@ -30,7 +30,7 @@ type ActionData = {
 
 export const loader = async ({request}: LoaderFunctionArgs) => {
   const {admin} = await authenticate.admin(request);
-  const [{enabled, shopId, shopDomain}, displayState, configuration] =
+  const [{enabled, shopId}, displayState, configuration] =
     await Promise.all([
     fetchProgramEnabled(admin),
     fetchDisplaySettings(admin),
@@ -40,7 +40,6 @@ export const loader = async ({request}: LoaderFunctionArgs) => {
   return {
     enabled,
     shopId,
-    shopDomain: shopDomain ?? displayState.shopDomain,
     displaySettings: displayState.settings,
     hasProgram: Boolean(configuration.syncPlan.program),
     sourceCounts: {
@@ -270,25 +269,9 @@ export default function SettingsRoute() {
                 <s-option value="false">Disabled</s-option>
               </s-select>
               <s-select
-                label="Account page"
-                name="accountPageEnabled"
-                value={displaySettings.accountPageEnabled ? 'true' : 'false'}
-              >
-                <s-option value="true">Enabled</s-option>
-                <s-option value="false">Disabled</s-option>
-              </s-select>
-              <s-select
                 label="Hydrogen storefront"
                 name="hydrogenEnabled"
                 value={displaySettings.hydrogenEnabled ? 'true' : 'false'}
-              >
-                <s-option value="true">Supported</s-option>
-                <s-option value="false">Hidden</s-option>
-              </s-select>
-              <s-select
-                label="Liquid storefront"
-                name="liquidEnabled"
-                value={displaySettings.liquidEnabled ? 'true' : 'false'}
               >
                 <s-option value="true">Supported</s-option>
                 <s-option value="false">Hidden</s-option>
@@ -305,33 +288,14 @@ export default function SettingsRoute() {
         </settingsFetcher.Form>
       </s-section>
 
-      <s-section heading="Hydrogen and Liquid support">
-        <s-stack direction="block" gap="base">
-          <s-banner tone="success" heading="Hydrogen is wired">
-            <s-paragraph>
-              The Hydrogen storefront reads loyalty metaobjects and customer
-              account metafields directly. Customer rewards page:
-              /account/loyalty.
-            </s-paragraph>
-          </s-banner>
-          <s-banner
-            tone={displaySettings.liquidEnabled ? 'success' : 'warning'}
-            heading={
-              displaySettings.liquidEnabled
-                ? 'Liquid endpoint is available'
-                : 'Liquid support is hidden'
-            }
-          >
-            <s-paragraph>
-              Liquid themes can fetch the public program JSON after the app is
-              installed on the shop. Use this endpoint with the shop domain:
-            </s-paragraph>
-            <s-text type="strong">
-              /api/public-loyalty-program?shop=
-              {data.shopDomain ?? 'example.myshopify.com'}
-            </s-text>
-          </s-banner>
-        </s-stack>
+      <s-section heading="Hydrogen storefront">
+        <s-banner tone="success" heading="Hydrogen is wired">
+          <s-paragraph>
+            The Hydrogen storefront reads loyalty metaobjects and customer
+            account metafields directly. Customer rewards page:
+            /account/loyalty.
+          </s-paragraph>
+        </s-banner>
       </s-section>
 
       <s-section slot="aside" heading="Owned definitions">
@@ -359,9 +323,7 @@ function parseDisplaySettingsForm(formData: FormData): LoyaltyDisplaySettings {
         ? 'bottom-left'
         : 'bottom-right',
     launcherEnabled: formData.get('launcherEnabled') !== 'false',
-    accountPageEnabled: formData.get('accountPageEnabled') !== 'false',
     hydrogenEnabled: formData.get('hydrogenEnabled') !== 'false',
-    liquidEnabled: formData.get('liquidEnabled') !== 'false',
   };
 }
 

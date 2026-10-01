@@ -13,7 +13,6 @@ import {
   SHOP_LOYALTY_PROGRAM_SYNCED_AT_KEY,
 } from './constants';
 import {adminGraphql, assertNoUserErrors} from './graphql.server';
-import {ensureCustomerLoyaltyStateDefinition} from './customer-state.server';
 import {fetchDisplaySettings, fetchProgramEnabled} from './settings.server';
 
 export type LoyaltyMetaobjectDefinition = {
@@ -115,8 +114,6 @@ export async function fetchLoyaltyProgramConfiguration(admin: AdminApiContext) {
 
 export async function syncShopProgramSnapshot(admin: AdminApiContext) {
   const configuration = await fetchLoyaltyProgramConfiguration(admin);
-
-  await ensureCustomerLoyaltyStateDefinition(admin);
 
   // Surface the on/off toggle inside the snapshot so the discount function
   // can short-circuit without an extra metafield lookup.
