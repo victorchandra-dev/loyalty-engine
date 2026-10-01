@@ -1,6 +1,7 @@
 import type {ActionFunctionArgs} from 'react-router';
 import {
   getOrdersPaidCustomerAdminId,
+  getOrdersPaidDiscountCodes,
   getOrdersPaidOrderAmount,
   getOrdersPaidOrderGid,
 } from '../../src/webhooks/orders-paid.js';
@@ -50,7 +51,7 @@ export const action = async ({request}: ActionFunctionArgs) => {
         customer,
         program,
         orderAmount: getOrdersPaidOrderAmount(order),
-        orderCreatedAt: order.created_at ?? new Date().toISOString(),
+        discountCodes: getOrdersPaidDiscountCodes(order),
       });
       const referrer = result.referral
         ? await loadLoyaltyCustomer(admin, result.referral.referrerId)

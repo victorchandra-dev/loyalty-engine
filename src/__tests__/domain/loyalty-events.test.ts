@@ -36,6 +36,8 @@ const customer = (overrides: Partial<LoyaltyCustomer> = {}): LoyaltyCustomer => 
 });
 
 const redemption = (redeemedAt: string, expiresAt = '2026-10-02T12:00:00Z') => ({
+  code: 'LF-ABC123',
+  discountId: 'gid://shopify/DiscountCodeNode/1',
   handle: 'discount-10',
   rewardType: 'fixed_discount',
   rewardValue: '10',
@@ -45,11 +47,10 @@ const redemption = (redeemedAt: string, expiresAt = '2026-10-02T12:00:00Z') => (
   redeemedAt,
 });
 
-const ORDER_CREATED = '2026-10-01T10:00:00Z';
 
 describe('projectPaidOrder', () => {
   it('awards order points plus the signup bonus on the first paid order', () => {
-    const result = projectPaidOrder({customer: customer(), program, orderAmount: 120.5, orderCreatedAt: ORDER_CREATED});
+    const result = projectPaidOrder({customer: customer(), program, orderAmount: 120.5, discountCodes: []});
 
     expect(result.balance).toBe(120 + 200);
     expect(result.awardedRules).toEqual(['signup']);
@@ -60,7 +61,7 @@ describe('projectPaidOrder', () => {
       customer: customer({balance: 50, awardedRules: ['signup', 'birthday-2026']}),
       program,
       orderAmount: 30,
-      orderCreatedAt: ORDER_CREATED,
+      discountCodes: [],
     });
 
     expect(result.balance).toBe(80);
@@ -72,7 +73,7 @@ describe('projectPaidOrder', () => {
       customer: customer({awardedRules: ['signup'], referrerId: 'gid://shopify/Customer/9'}),
       program,
       orderAmount: 10,
-      orderCreatedAt: ORDER_CREATED,
+      discountCodes: [],
     });
 
     expect(result.balance).toBe(10 + 500);
@@ -84,7 +85,7 @@ describe('projectPaidOrder', () => {
       customer: customer({awardedRules: ['signup'], referrerId: 'gid://shopify/Customer/9', referralCredited: true}),
       program,
       orderAmount: 10,
-      orderCreatedAt: ORDER_CREATED,
+      discountCodes: [],
     });
 
     expect(result.balance).toBe(10);
@@ -96,29 +97,29 @@ describe('projectPaidOrder', () => {
       customer: customer({awardedRules: ['signup'], referrerId: 'gid://shopify/Customer/1'}),
       program,
       orderAmount: 10,
-      orderCreatedAt: ORDER_CREATED,
+      discountCodes: [],
     });
 
     expect(result.referral).toBeNull();
   });
 
-  it('clears a reward redeemed before the order was placed, since checkout applied it', () => {
+  it('clears the reward when the order used its code', () => {
     const result = projectPaidOrder({
       customer: customer({awardedRules: ['signup'], activeRedemption: redemption('2026-10-01T09:00:00Z')}),
       program,
       orderAmount: 10,
-      orderCreatedAt: ORDER_CREATED,
+      discountCodes: ['lf-abc123'],
     });
 
     expect(result.clearRedemption).toBe(true);
   });
 
-  it('keeps a reward redeemed after the order was placed', () => {
+  it('keeps the reward when the order used other codes or none', () => {
     const result = projectPaidOrder({
       customer: customer({awardedRules: ['signup'], activeRedemption: redemption('2026-10-01T11:00:00Z')}),
       program,
       orderAmount: 10,
-      orderCreatedAt: ORDER_CREATED,
+      discountCodes: ['WELCOME10'],
     });
 
     expect(result.clearRedemption).toBe(false);
@@ -129,8 +130,8 @@ describe('projectRedemption', () => {
   const now = new Date('2026-10-01T12:00:00Z');
 
   it('rejects an unknown or inactive reward with 404', () => {
-    expect(projectRedemption({customer: customer({balance: 1000}), program, handle: 'retired', now})).toMatchObject({ok: false, status: 404});
-    expect(projectRedemption({customer: customer({balance: 1000}), program, handle: 'nope', now})).toMatchObject({ok: false, status: 404});
+    expect(projectRedemption({customer: customer({balance: 1000}), program, handle: 'retired', now, code: 'LF-NEW'})).toMatchObject({ok: false, status: 404});
+    expect(projectRedemption({customer: customer({balance: 1000}), program, handle: 'nope', now, code: 'LF-NEW'})).toMatchObject({ok: false, status: 404});
   });
 
   it('rejects a second reward while one is still active, keeping the points (409)', () => {
@@ -139,6 +140,7 @@ describe('projectRedemption', () => {
       program,
       handle: 'discount-10',
       now,
+      code: 'LF-NEW',
     });
 
     expect(result).toMatchObject({ok: false, status: 409});
@@ -150,17 +152,18 @@ describe('projectRedemption', () => {
       program,
       handle: 'discount-10',
       now,
+      code: 'LF-NEW',
     });
 
     expect(result).toMatchObject({ok: true, balance: 500});
   });
 
   it('rejects when the balance is too low (400)', () => {
-    expect(projectRedemption({customer: customer({balance: 499}), program, handle: 'discount-10', now})).toMatchObject({ok: false, status: 400});
+    expect(projectRedemption({customer: customer({balance: 499}), program, handle: 'discount-10', now, code: 'LF-NEW'})).toMatchObject({ok: false, status: 400});
   });
 
   it('debits the cost and records a reward that expires in 30 days', () => {
-    const result = projectRedemption({customer: customer({balance: 600}), program, handle: 'discount-10', now});
+    const result = projectRedemption({customer: customer({balance: 600}), program, handle: 'discount-10', now, code: 'LF-NEW'});
 
     expect(result).toEqual({
       ok: true,
@@ -173,6 +176,8 @@ describe('projectRedemption', () => {
         expiresAt: '2026-10-31T12:00:00.000Z',
         redemptionId: 'd10',
         redeemedAt: '2026-10-01T12:00:00.000Z',
+        code: 'LF-NEW',
+        discountId: null,
       },
     });
   });

@@ -22,20 +22,58 @@ function redeem(admin: unknown) {
 }
 
 describe('POST /api/redeem', () => {
-  it('debits the points and stores the reward in one guarded write', async () => {
+  const codeCreated = () => ({
+    discountCodeBasicCreate: {codeDiscountNode: {id: 'gid://shopify/DiscountCodeNode/77'}, userErrors: []},
+  });
+
+  it('creates a single-use code for this customer, then debits the points and stores the reward', async () => {
     const shopify = fakeAdmin({
       LoyaltyProgramSnapshot: snapshotResponse(),
       LoyaltyCustomer: () => customerResponse({balance: 600, digest: 'd1'}),
+      LoyaltyRewardCodeCreate: codeCreated,
       LoyaltyMetafieldsSet: okWrite,
     });
 
     const response = await redeem(shopify.admin);
 
     expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({ok: true, newBalance: 100, redemption: {handle: 'discount-10'}});
+    const body = await response.json();
+    expect(body).toMatchObject({ok: true, newBalance: 100, redemption: {handle: 'discount-10', discountId: 'gid://shopify/DiscountCodeNode/77'}});
+    expect(body.redemption.code).toMatch(/^LF-[0-9A-F]{10}$/);
+
+    const discount = shopify.calls.find((c) => c.name === 'LoyaltyRewardCodeCreate')!.variables.discount as Record<string, unknown>;
+    expect(discount).toMatchObject({
+      code: body.redemption.code,
+      usageLimit: 1,
+      appliesOncePerCustomer: true,
+      endsAt: body.redemption.expiresAt,
+      context: {customers: {add: ['gid://shopify/Customer/1']}},
+      customerGets: {value: {discountAmount: {amount: 10, appliesOnEachItem: false}}, items: {all: true}},
+      combinesWith: {orderDiscounts: true},
+    });
+
     const [write] = shopify.writes();
     expect(field(write, 'loyalty_points_balance')).toMatchObject({value: '100', compareDigest: 'd1'});
-    expect(JSON.parse(field(write, 'loyalty_active_redemption')?.value as string)).toMatchObject({handle: 'discount-10', pointsCost: 500});
+    expect(JSON.parse(field(write, 'loyalty_active_redemption')?.value as string)).toMatchObject({
+      handle: 'discount-10', pointsCost: 500, code: body.redemption.code, discountId: 'gid://shopify/DiscountCodeNode/77',
+    });
+  });
+
+  it("deletes the code again when the points can't be saved, so no one gets a free reward", async () => {
+    const shopify = fakeAdmin({
+      LoyaltyProgramSnapshot: snapshotResponse(),
+      LoyaltyCustomer: () => customerResponse({balance: 600, digest: 'd1'}),
+      LoyaltyRewardCodeCreate: codeCreated,
+      LoyaltyMetafieldsSet: () => ({
+        metafieldsSet: {metafields: [], userErrors: [{field: ['metafields', '1'], message: 'The resource has been updated since it was loaded.'}]},
+      }),
+      LoyaltyRewardCodeDelete: ({id}) => ({discountCodeDelete: {deletedCodeDiscountId: id, userErrors: []}}),
+    });
+
+    const response = await redeem(shopify.admin);
+
+    expect(response.status).toBe(500);
+    expect(shopify.calls.find((c) => c.name === 'LoyaltyRewardCodeDelete')?.variables.id).toBe('gid://shopify/DiscountCodeNode/77');
   });
 
   it('refuses a second reward while one is waiting, without taking points (bug 8)', async () => {

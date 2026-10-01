@@ -3,7 +3,7 @@ export type OrdersPaidWebhookPayload = {
   admin_graphql_api_id?: string | null;
   admin_graphql_api_customer_id?: string | null;
   current_total_price?: string | null;
-  created_at?: string | null;
+  discount_codes?: Array<{code?: string | null}> | null;
   customer?: {
     id?: number | null;
   } | null;
@@ -36,4 +36,9 @@ export function getOrdersPaidOrderAmount(payload: OrdersPaidWebhookPayload) {
   if (!raw) return 0;
   const parsed = Number.parseFloat(raw);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
+
+/** Discount codes the order used (reward codes are matched against these). */
+export function getOrdersPaidDiscountCodes(payload: OrdersPaidWebhookPayload) {
+  return (payload.discount_codes ?? []).flatMap((entry) => (entry.code ? [entry.code] : []));
 }

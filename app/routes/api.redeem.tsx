@@ -1,7 +1,10 @@
+import {randomBytes} from 'node:crypto';
 import type {ActionFunctionArgs} from 'react-router';
 import type {AdminApiContext} from '@shopify/shopify-app-react-router/server';
 import {projectRedemption} from '../../src/domain/customer-state.js';
 import {
+  createRewardCode,
+  deleteRewardCode,
   loadLoyaltyCustomer,
   loadProgramSnapshot,
   saveLoyaltyCustomer,
@@ -104,24 +107,39 @@ export const action = async ({request}: ActionFunctionArgs) => {
       program,
       handle: redemptionHandle,
       now: new Date(),
+      code: `LF-${randomBytes(5).toString('hex').toUpperCase()}`,
     });
     if (!result.ok) {
       return Response.json({error: result.message}, {status: result.status});
     }
 
-    // Fails if the balance changed since it was read (e.g. a double click),
-    // so points are never spent twice.
-    await saveLoyaltyCustomer(admin, {
-      program,
-      customer,
-      balance: result.balance,
-      activeRedemption: result.activeRedemption,
-    });
-    return Response.json({
-      ok: true,
-      newBalance: result.balance,
+    // Create the code first, then take the points. If the points can't be
+    // saved (the balance changed since it was read, e.g. a double click), the
+    // code is deleted again, so a reward is never free and never paid twice.
+    const title =
+      program.redemptions.find((entry) => entry.handle === redemptionHandle)?.title ??
+      redemptionHandle;
+    const discountId = await createRewardCode(admin, {
+      customerAdminId,
+      title,
       redemption: result.activeRedemption,
     });
+    const redemption = {...result.activeRedemption, discountId};
+    try {
+      await saveLoyaltyCustomer(admin, {
+        program,
+        customer,
+        balance: result.balance,
+        activeRedemption: redemption,
+      });
+    } catch (error) {
+      await deleteRewardCode(admin, discountId).catch((cleanupError) => {
+        console.error(`[loyalty] Orphaned reward code ${discountId}; delete it in Discounts`);
+        console.error(cleanupError);
+      });
+      throw error;
+    }
+    return Response.json({ok: true, newBalance: result.balance, redemption});
   } catch (error) {
     console.error('[loyalty] redeem failed', error);
     return Response.json(

@@ -192,6 +192,10 @@ export type ActiveRedemption = {
   expiresAt: string;
   redemptionId: string | null;
   redeemedAt: string;
+  /** The single-use discount code for this reward (null on old records). */
+  code: string | null;
+  /** Shopify discount ID of that code, set once the code is created. */
+  discountId: string | null;
 };
 
 /** Everything the engine reads about one customer before changing points. */
@@ -226,12 +230,13 @@ export function projectPaidOrder({
   customer,
   program,
   orderAmount,
-  orderCreatedAt,
+  discountCodes,
 }: {
   customer: LoyaltyCustomer;
   program: LoyaltyProgramConfig;
   orderAmount: number;
-  orderCreatedAt: string;
+  /** Codes the order used, from the orders/paid payload. */
+  discountCodes: string[];
 }): {
   balance: number;
   awardedRules: string[];
@@ -262,12 +267,11 @@ export function projectPaidOrder({
     }
   }
 
-  // The discount function applies an active reward to every checkout, so a
-  // reward that existed when this order was placed was used on it.
-  const redemption = customer.activeRedemption;
+  // The reward is used once this order carries its code (Shopify codes are
+  // case-insensitive). Shopify's usage limit stops reuse either way.
+  const code = customer.activeRedemption?.code?.toLowerCase();
   const clearRedemption =
-    redemption !== null &&
-    !(Date.parse(redemption.redeemedAt) > Date.parse(orderCreatedAt));
+    code != null && discountCodes.some((used) => used.toLowerCase() === code);
 
   return {
     balance: Math.max(0, customer.balance + points),
@@ -283,11 +287,14 @@ export function projectRedemption({
   program,
   handle,
   now,
+  code,
 }: {
   customer: LoyaltyCustomer;
   program: LoyaltyProgramConfig;
   handle: string;
   now: Date;
+  /** The discount code the caller will create for this reward. */
+  code: string;
 }):
   | {ok: true; balance: number; activeRedemption: ActiveRedemption}
   | {ok: false; status: 400 | 404 | 409; message: string} {
@@ -323,6 +330,8 @@ export function projectRedemption({
       expiresAt: new Date(now.getTime() + REDEMPTION_TTL_MS).toISOString(),
       redemptionId: reward.id,
       redeemedAt: now.toISOString(),
+      code,
+      discountId: null,
     },
   };
 }

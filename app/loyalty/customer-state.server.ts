@@ -304,7 +304,93 @@ function parseActiveRedemption(value: string | null | undefined): ActiveRedempti
     expiresAt: record.expiresAt,
     redemptionId: typeof record.redemptionId === 'string' ? record.redemptionId : null,
     redeemedAt: record.redeemedAt,
+    code: typeof record.code === 'string' ? record.code : null,
+    discountId: typeof record.discountId === 'string' ? record.discountId : null,
   };
+}
+
+// ----------------------------------------------------------------------------
+// Reward codes: a redeemed reward is a built-in single-use discount code for
+// that one customer (custom apps can't run Functions off Plus).
+// ----------------------------------------------------------------------------
+
+const REWARD_CODE_CREATE_MUTATION = `#graphql
+  mutation LoyaltyRewardCodeCreate($discount: DiscountCodeBasicInput!) {
+    discountCodeBasicCreate(basicCodeDiscount: $discount) {
+      codeDiscountNode {
+        id
+      }
+      userErrors {
+        field
+        message
+      }
+    }
+  }
+` as const;
+
+const REWARD_CODE_DELETE_MUTATION = `#graphql
+  mutation LoyaltyRewardCodeDelete($id: ID!) {
+    discountCodeDelete(id: $id) {
+      deletedCodeDiscountId
+      userErrors {
+        field
+        message
+      }
+    }
+  }
+` as const;
+
+/**
+ * Create the discount code behind a redeemed reward: usable once, only by
+ * this customer, until the reward expires. It combines with other order
+ * discounts so it stacks on the customer's tier discount (owner's call).
+ */
+export async function createRewardCode(
+  admin: AdminApiContext,
+  {
+    customerAdminId,
+    title,
+    redemption,
+  }: {customerAdminId: string; title: string; redemption: ActiveRedemption},
+): Promise<string> {
+  const value = Number.parseFloat(redemption.rewardValue ?? '');
+  if (!redemption.code || !Number.isFinite(value) || value <= 0) {
+    throw new Error(`Reward "${redemption.handle}" has no usable code or value.`);
+  }
+
+  const data = await adminGraphql<{
+    discountCodeBasicCreate: {
+      codeDiscountNode: {id: string} | null;
+      userErrors: Array<{field?: Array<string | number> | null; message: string}>;
+    };
+  }>(admin, REWARD_CODE_CREATE_MUTATION, {
+    discount: {
+      title: `LoyaltyFlow reward: ${title}`,
+      code: redemption.code,
+      startsAt: redemption.redeemedAt,
+      endsAt: redemption.expiresAt,
+      usageLimit: 1,
+      appliesOncePerCustomer: true,
+      context: {customers: {add: [customerAdminId]}},
+      customerGets: {
+        value:
+          redemption.rewardType === 'percent_discount'
+            ? {percentage: Math.min(100, value) / 100}
+            : {discountAmount: {amount: value, appliesOnEachItem: false}},
+        items: {all: true},
+      },
+      combinesWith: {orderDiscounts: true, productDiscounts: false, shippingDiscounts: true},
+    },
+  });
+  assertNoUserErrors(data.discountCodeBasicCreate.userErrors, 'Failed to create the reward code');
+  return data.discountCodeBasicCreate.codeDiscountNode!.id;
+}
+
+export async function deleteRewardCode(admin: AdminApiContext, discountId: string) {
+  const data = await adminGraphql<{
+    discountCodeDelete: {userErrors: Array<{field?: Array<string | number> | null; message: string}>};
+  }>(admin, REWARD_CODE_DELETE_MUTATION, {id: discountId});
+  assertNoUserErrors(data.discountCodeDelete.userErrors, 'Failed to delete the reward code');
 }
 
 // ----------------------------------------------------------------------------

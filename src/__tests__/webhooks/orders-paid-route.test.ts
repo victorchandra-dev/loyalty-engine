@@ -113,7 +113,7 @@ describe('orders/paid webhook', () => {
     expect(field(write, 'loyalty_points_balance', 'gid://shopify/Customer/9')).toMatchObject({value: '1500', compareDigest: 'r1'});
   });
 
-  it('clears the reward checkout applied to this order (bug 2)', async () => {
+  it('clears the reward once the order used its code (bug 2)', async () => {
     const shopify = fakeAdmin({
       LoyaltyProgramSnapshot: snapshotResponse(),
       LoyaltyCustomer: () =>
@@ -121,13 +121,14 @@ describe('orders/paid webhook', () => {
           balance: 100,
           activeRedemption: {
             handle: 'discount-10', rewardType: 'fixed_discount', rewardValue: '10', pointsCost: 500,
-            expiresAt: '2026-10-02T09:00:00Z', redemptionId: 'd10', redeemedAt: '2026-10-01T09:00:00Z',
+            expiresAt: '2026-10-31T09:00:00Z', redemptionId: 'd10', redeemedAt: '2026-10-01T09:00:00Z',
+            code: 'LF-ABC123', discountId: 'gid://shopify/DiscountCodeNode/77',
           },
         }),
       LoyaltyMetafieldsSet: okWrite,
     });
 
-    await deliver(shopify.admin);
+    await deliver(shopify.admin, {...ORDER, discount_codes: [{code: 'LF-ABC123', amount: '10.00', type: 'fixed_amount'}]});
 
     expect(field(shopify.writes()[0], 'loyalty_active_redemption')).toMatchObject({value: '{}'});
   });
