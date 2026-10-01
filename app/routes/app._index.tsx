@@ -224,6 +224,10 @@ export const action = async ({request}: ActionFunctionArgs): Promise<ActionData>
       }
     }
   } catch (error) {
+    // The toast shows the message to the merchant; log it too so Error
+    // Reporting and the "logged an error" alert see admin failures.
+    console.error(`[loyalty] admin ${String(formData.get('intent'))} failed`);
+    console.error(error);
     return {
       status: 'error',
       intent: 'syncProgram',
