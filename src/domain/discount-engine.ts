@@ -1,8 +1,3 @@
-import {
-  buildCustomerLoyaltyState,
-  type CustomerMetricSnapshot,
-  type CustomerLoyaltyState,
-} from './customer-state.js';
 import type {LoyaltyBenefitConfig, LoyaltyProgramConfig} from './program.js';
 
 export type LoyaltyDiscountConfiguration = {
@@ -14,13 +9,6 @@ export type LoyaltyDiscountConfiguration = {
     percentage: number;
     label: string;
   }>;
-};
-
-export type LoyaltyDiscountDecision = {
-  label: string;
-  percentage: number;
-  benefitHandle: string;
-  tierHandle: string;
 };
 
 export function buildDiscountConfiguration(
@@ -49,42 +37,6 @@ export function buildDiscountConfiguration(
           tier !== null,
       ),
   };
-}
-
-export function resolveDiscountDecision({
-  customerState,
-  program,
-}: {
-  customerState: CustomerLoyaltyState;
-  program: LoyaltyProgramConfig;
-}): LoyaltyDiscountDecision | null {
-  if (!customerState.currentTierHandle) {
-    return null;
-  }
-
-  const benefit = getDiscountBenefit(program, customerState.currentTierHandle);
-
-  if (!benefit || benefit.value === null || benefit.value <= 0) {
-    return null;
-  }
-
-  return {
-    label: benefit.displayLabel,
-    percentage: benefit.value,
-    benefitHandle: benefit.handle,
-    tierHandle: customerState.currentTierHandle,
-  };
-}
-
-export function resolveDiscountDecisionFromMetrics({
-  metrics,
-  program,
-}: {
-  metrics: CustomerMetricSnapshot;
-  program: LoyaltyProgramConfig;
-}) {
-  const customerState = buildCustomerLoyaltyState({metrics, program});
-  return resolveDiscountDecision({customerState, program});
 }
 
 function getDiscountBenefit(
