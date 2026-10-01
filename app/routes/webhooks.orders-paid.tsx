@@ -12,6 +12,7 @@ import {
   loadProgramSnapshot,
   saveLoyaltyCustomer,
 } from '../loyalty/customer-state.server';
+import {recordPointsEvents, type PointsEventInput} from '../loyalty/points-history.server';
 import {runOnce} from '../loyalty/run-once.server';
 import {authenticate} from '../shopify.server';
 
@@ -68,6 +69,27 @@ export const action = async ({request}: ActionFunctionArgs) => {
           ? {referrer: {customer: referrer, balance: referrer.balance + result.referral.points}}
           : {}),
       });
+
+      let balance = customer.balance;
+      const history: PointsEventInput[] = result.earned.map(({type, points}) => {
+        balance += points;
+        return {customerId: customer.id, type, points, balance, orderId: orderGid};
+      });
+      if (result.clearRedemption && customer.activeRedemption) {
+        const {code, handle} = customer.activeRedemption;
+        history.push({customerId: customer.id, type: 'reward_used', points: 0, balance: result.balance, orderId: orderGid, data: {code, handle}});
+      }
+      if (result.referral && referrer) {
+        history.push({
+          customerId: referrer.id,
+          type: 'referral',
+          points: result.referral.points,
+          balance: referrer.balance + result.referral.points,
+          orderId: orderGid,
+          data: {refereeId: customer.id},
+        });
+      }
+      await recordPointsEvents(shop, history);
     });
   } catch (error) {
     console.error(`[loyalty] orders/paid failed for ${orderGid}; Shopify will retry`);

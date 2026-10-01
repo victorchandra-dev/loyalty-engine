@@ -31,6 +31,7 @@ function deliver(admin: unknown, payload: Record<string, unknown> = ORDER) {
 describe('orders/paid webhook', () => {
   beforeEach(() => {
     prisma.keys.clear();
+    prisma.events.length = 0;
     webhook.mockReset();
   });
 
@@ -131,6 +132,77 @@ describe('orders/paid webhook', () => {
     await deliver(shopify.admin, {...ORDER, discount_codes: [{code: 'LF-ABC123', amount: '10.00', type: 'fixed_amount'}]});
 
     expect(field(shopify.writes()[0], 'loyalty_active_redemption')).toMatchObject({value: '{}'});
+  });
+
+  it('records the order and signup points in the history, each with the balance after it', async () => {
+    const shopify = fakeAdmin({
+      LoyaltyProgramSnapshot: snapshotResponse(),
+      LoyaltyCustomer: () => customerResponse({balance: 100, awardedRules: []}),
+      LoyaltyMetafieldsSet: okWrite,
+    });
+
+    await deliver(shopify.admin);
+
+    expect(prisma.events).toEqual([
+      {shop: 'test.myshopify.com', customerId: 'gid://shopify/Customer/1', type: 'order', points: 50, balance: 150, orderId: 'gid://shopify/Order/500'},
+      {shop: 'test.myshopify.com', customerId: 'gid://shopify/Customer/1', type: 'signup', points: 200, balance: 350, orderId: 'gid://shopify/Order/500'},
+    ]);
+  });
+
+  it("records the referrer's credit in the history", async () => {
+    const shopify = fakeAdmin({
+      LoyaltyProgramSnapshot: snapshotResponse(),
+      LoyaltyCustomer: ({id}) =>
+        id === 'gid://shopify/Customer/9'
+          ? customerResponse({id: 'gid://shopify/Customer/9', balance: 1000})
+          : customerResponse({balance: 0, referrerId: 'gid://shopify/Customer/9'}),
+      LoyaltyMetafieldsSet: okWrite,
+    });
+
+    await deliver(shopify.admin);
+
+    expect(prisma.events).toContainEqual({
+      shop: 'test.myshopify.com', customerId: 'gid://shopify/Customer/9', type: 'referral', points: 500, balance: 1500,
+      orderId: 'gid://shopify/Order/500', data: {refereeId: 'gid://shopify/Customer/1'},
+    });
+  });
+
+  it('records that the reward was used, with its code', async () => {
+    const shopify = fakeAdmin({
+      LoyaltyProgramSnapshot: snapshotResponse(),
+      LoyaltyCustomer: () =>
+        customerResponse({
+          balance: 100,
+          activeRedemption: {
+            handle: 'discount-10', rewardType: 'fixed_discount', rewardValue: '10', pointsCost: 500,
+            expiresAt: '2026-10-31T09:00:00Z', redemptionId: 'd10', redeemedAt: '2026-10-01T09:00:00Z',
+            code: 'LF-ABC123', discountId: 'gid://shopify/DiscountCodeNode/77',
+          },
+        }),
+      LoyaltyMetafieldsSet: okWrite,
+    });
+
+    await deliver(shopify.admin, {...ORDER, discount_codes: [{code: 'lf-abc123'}]});
+
+    expect(prisma.events).toContainEqual({
+      shop: 'test.myshopify.com', customerId: 'gid://shopify/Customer/1', type: 'reward_used', points: 0, balance: 150,
+      orderId: 'gid://shopify/Order/500', data: {code: 'LF-ABC123', handle: 'discount-10'},
+    });
+  });
+
+  it("still awards once and answers 200 when the history can't be saved", async () => {
+    prisma.pointsEvent.createMany.mockRejectedValueOnce(new Error('connection refused'));
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const shopify = fakeAdmin({
+      LoyaltyProgramSnapshot: snapshotResponse(),
+      LoyaltyCustomer: () => customerResponse({balance: 100}),
+      LoyaltyMetafieldsSet: okWrite,
+    });
+
+    expect((await deliver(shopify.admin)).status).toBe(200);
+    expect(shopify.writes()).toHaveLength(1);
+    expect(prisma.keys.size).toBe(1);
+    log.mockRestore();
   });
 
   it('does nothing while the program is paused', async () => {
