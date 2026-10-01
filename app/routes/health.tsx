@@ -1,7 +1,5 @@
 import type {LoaderFunctionArgs} from 'react-router';
-import {PrismaClient} from '@prisma/client';
-
-const prisma = new PrismaClient();
+import {prisma} from '../session-storage.server';
 
 export const loader = async ({request}: LoaderFunctionArgs) => {
   if (request.method !== 'GET') {

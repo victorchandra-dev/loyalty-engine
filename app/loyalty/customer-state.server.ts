@@ -1,5 +1,4 @@
 import type {AdminApiContext} from '@shopify/shopify-app-react-router/server';
-import * as Sentry from '@sentry/node';
 import {METAFIELDS_SET_MUTATION} from '../../src/integrations/shopify/admin-operations.js';
 import type {LoyaltyProgramConfig} from '../../src/domain/program.js';
 import {
@@ -508,7 +507,7 @@ export async function awardEarnRuleToCustomer({
       message: `Awarded ${projection.pointsAwarded} points for "${rule.title}".`,
     };
   } catch (error) {
-    Sentry.captureException(error);
+    console.error(error);
     return {
       status: 'rejected',
       message: 'Could not award points right now. Please try again.',

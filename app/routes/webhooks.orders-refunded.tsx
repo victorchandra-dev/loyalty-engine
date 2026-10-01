@@ -1,5 +1,4 @@
 import type {ActionFunctionArgs} from 'react-router';
-import * as Sentry from '@sentry/node';
 import {
   computeRefundPointsDebit,
   getOrdersRefundedAmount,
@@ -63,8 +62,8 @@ export const action = async ({request}: ActionFunctionArgs) => {
       });
     });
   } catch (error) {
-    console.error('[loyalty] refunds/create failed; Shopify will retry', error);
-    Sentry.captureException(error, {extra: {refundGid, orderGid, refundedAmount}});
+    console.error(`[loyalty] refunds/create failed for ${refundGid}; Shopify will retry`);
+    console.error(error);
     return new Response(null, {status: 500});
   }
 

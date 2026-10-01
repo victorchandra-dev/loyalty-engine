@@ -1,5 +1,4 @@
 import type {ActionFunctionArgs} from 'react-router';
-import * as Sentry from '@sentry/node';
 import {isLoyaltyConfigMetaobject} from '../../src/webhooks/metaobjects.js';
 import type {MetaobjectWebhookPayload} from '../../src/webhooks/metaobjects.js';
 import {syncShopProgramSnapshot} from '../loyalty/program.server';
@@ -22,8 +21,8 @@ export const action = async ({request}: ActionFunctionArgs) => {
   try {
     await syncShopProgramSnapshot(admin);
   } catch (error) {
-    console.error('[loyalty] Failed to sync program snapshot', error);
-    Sentry.captureException(error, {extra: {shop, topic}});
+    console.error(`[loyalty] Failed to sync program snapshot for ${shop}`);
+    console.error(error);
   }
 
   return new Response();

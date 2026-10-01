@@ -1,6 +1,61 @@
 # Deploying the Loyalty Engine to Google Cloud Run
 
-This guide deploys the embedded Shopify admin app in `apps/loyalty-engine/` to Google Cloud Run, backed by a Cloud SQL Postgres instance for session storage.
+## Current production setup (deployed 1 October 2026)
+
+This section describes what actually runs. The rest of the file is the
+original guide, kept for reference. Where the two disagree, this section is
+correct.
+
+| Piece | Value |
+|---|---|
+| Project | `loyalty-engine-494212`, region `asia-southeast1` |
+| Service | Cloud Run `amadaflow-loyalty` at `https://amadaflow-loyalty-201907146826.asia-southeast1.run.app`, with 1–2 instances and one always on |
+| Database | Cloud SQL `loyalty-pg`: Postgres 16, `db-f1-micro`, **private IP only**, database `loyalty`. The org policy `sql.restrictPublicIp` blocks public IP. |
+| Network | `default` VPC. The private services range `google-managed-services-default` is peered with `servicenetworking`, and Cloud Run uses Direct VPC egress (`private-ranges-only`). |
+| Secrets | `SHOPIFY_API_SECRET`, `DATABASE_URL` (private IP, `sslmode=require`), `LOYALTY_ENGINE_SHARED_SECRET`, `LOYALTY_CUSTOMER_TOKEN_SECRET` |
+| Env vars | `SHOPIFY_API_KEY=d8ad7388e5809ec8a46eb629fbcd5161`, `SCOPES` (same as the TOML), `SHOPIFY_APP_URL` (the service URL) |
+| Errors | Cloud Logging and Error Reporting, which read stack traces from `console.error`. Sentry isn't used. |
+
+The database holds only admin sessions and the processed-webhook keys. Points
+live in Shopify metafields.
+
+**Redeploy after a code change.** Flags, env vars and secrets carry over from
+the previous revision. Migrations run when the container starts.
+
+```bash
+gcloud run deploy amadaflow-loyalty --source . --project loyalty-engine-494212 --region asia-southeast1
+```
+
+**The first deploy, for reference:**
+
+```bash
+gcloud run deploy amadaflow-loyalty --source . --project loyalty-engine-494212 --region asia-southeast1 \
+  --allow-unauthenticated \
+  --network=default --subnet=default --vpc-egress=private-ranges-only \
+  --min-instances=1 --max-instances=2 --cpu=1 --memory=512Mi --timeout=60 --port=8080 \
+  --set-env-vars="^##^SHOPIFY_API_KEY=d8ad7388e5809ec8a46eb629fbcd5161##SCOPES=read_customers,write_customers,customer_read_customers,read_orders,read_discounts,write_discounts,read_metaobjects,write_metaobjects,read_metaobject_definitions,write_metaobject_definitions##SHOPIFY_APP_URL=https://amadaflow-loyalty-201907146826.asia-southeast1.run.app" \
+  --set-secrets="SHOPIFY_API_SECRET=SHOPIFY_API_SECRET:latest,DATABASE_URL=DATABASE_URL:latest,LOYALTY_ENGINE_SHARED_SECRET=LOYALTY_ENGINE_SHARED_SECRET:latest,LOYALTY_CUSTOMER_TOKEN_SECRET=LOYALTY_CUSTOMER_TOKEN_SECRET:latest"
+```
+
+- `--min-instances=1`: Shopify expects a webhook reply within 5 seconds, and a
+  cold start (container plus Prisma migrate) takes longer than that.
+- `private-ranges-only`: traffic to Cloud SQL's private IP goes over the VPC,
+  while calls to Shopify still go out to the internet.
+
+**To rotate a secret,** add a new version, then redeploy so running instances
+pick it up:
+
+```bash
+printf %s "NEW_VALUE" | gcloud secrets versions add SECRET_NAME --project loyalty-engine-494212 --data-file=-
+```
+
+The Postgres password exists only inside `DATABASE_URL`. To rotate it, run
+`gcloud sql users set-password postgres --instance loyalty-pg`, then add a new
+`DATABASE_URL` version.
+
+---
+
+The original guide follows. It deploys the embedded Shopify admin app in `apps/loyalty-engine/` to Google Cloud Run, backed by a Cloud SQL Postgres instance for session storage.
 
 ## Architecture
 

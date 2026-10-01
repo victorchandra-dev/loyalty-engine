@@ -1,5 +1,4 @@
 import type {ActionFunctionArgs} from 'react-router';
-import * as Sentry from '@sentry/node';
 import {
   getOrdersPaidCustomerAdminId,
   getOrdersPaidOrderAmount,
@@ -70,8 +69,8 @@ export const action = async ({request}: ActionFunctionArgs) => {
       });
     });
   } catch (error) {
-    console.error('[loyalty] orders/paid failed; Shopify will retry', error);
-    Sentry.captureException(error, {extra: {customerAdminId, orderGid}});
+    console.error(`[loyalty] orders/paid failed for ${orderGid}; Shopify will retry`);
+    console.error(error);
     return new Response(null, {status: 500});
   }
 

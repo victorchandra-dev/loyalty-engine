@@ -2,12 +2,11 @@
 
 client_id = "d8ad7388e5809ec8a46eb629fbcd5161"
 name = "LoyaltyFlow"
-application_url = "https://amadaflow-loyalty.fly.dev"
+application_url = "https://amadaflow-loyalty-201907146826.asia-southeast1.run.app"
 embedded = true
 
 [build]
 automatically_update_urls_on_dev = true
-include_config_on_deploy = true
 
 [webhooks]
 api_version = "2026-04"
@@ -52,9 +51,9 @@ use_legacy_install_flow = false
 
 [auth]
 redirect_urls = [
-  "https://amadaflow-loyalty.fly.dev/auth/callback",
-  "https://amadaflow-loyalty.fly.dev/auth/shopify/callback",
-  "https://amadaflow-loyalty.fly.dev/api/auth/callback"
+  "https://amadaflow-loyalty-201907146826.asia-southeast1.run.app/auth/callback",
+  "https://amadaflow-loyalty-201907146826.asia-southeast1.run.app/auth/shopify/callback",
+  "https://amadaflow-loyalty-201907146826.asia-southeast1.run.app/api/auth/callback"
 ]
 
 [shop.metafields.app.loyalty_program_snapshot]
