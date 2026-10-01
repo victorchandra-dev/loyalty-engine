@@ -593,6 +593,14 @@ async function applyTierEntries(
   }
 }
 
+const AUTOMATIC_DISCOUNT_EXISTS_QUERY = `#graphql
+  query LoyaltyAutomaticDiscountExists($id: ID!) {
+    automaticDiscountNode(id: $id) {
+      id
+    }
+  }
+` as const;
+
 /**
  * The automatic discount runs the loyalty function, which applies both tier
  * discounts and redeemed rewards, so it must exist whenever a program does,
@@ -619,7 +627,18 @@ export async function ensureAutomaticDiscount(
     tags: ['loyalty', 'managed-by-app'],
   };
 
-  if (configuration.currentDiscountId) {
+  // The saved ID can outlive its discount (deleted in the admin, or removed
+  // with a dev preview). Only update a discount that still exists; otherwise
+  // create a new one, and the caller saves its ID.
+  const saved = configuration.currentDiscountId
+    ? await adminGraphql<{automaticDiscountNode: {id: string} | null}>(
+        admin,
+        AUTOMATIC_DISCOUNT_EXISTS_QUERY,
+        {id: configuration.currentDiscountId},
+      )
+    : null;
+
+  if (configuration.currentDiscountId && saved?.automaticDiscountNode) {
     const result = await adminGraphql<DiscountAutomaticMutationData>(
       admin,
       DISCOUNT_AUTOMATIC_APP_UPDATE_MUTATION,

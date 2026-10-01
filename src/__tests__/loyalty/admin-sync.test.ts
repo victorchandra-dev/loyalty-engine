@@ -67,4 +67,42 @@ describe('Checkout discount', () => {
 
     expect(discountId).toBe('gid://shopify/DiscountAutomaticNode/1');
   });
+
+  it('is recreated when the saved discount was deleted, instead of failing the sync', async () => {
+    const shopify = fakeAdmin({
+      LoyaltyAutomaticDiscountExists: () => ({automaticDiscountNode: null}),
+      LoyaltyAutomaticDiscountCreate: () => ({
+        discountAutomaticAppCreate: {automaticAppDiscount: {discountId: 'gid://shopify/DiscountAutomaticNode/2'}, userErrors: []},
+      }),
+      LoyaltyAutomaticDiscountUpdate: () => ({
+        discountAutomaticAppUpdate: {automaticAppDiscount: null, userErrors: [{field: ['id'], message: 'Discount does not exist.'}]},
+      }),
+    });
+    const configuration = {
+      currentDiscountId: 'gid://shopify/DiscountAutomaticNode/1369296175190',
+      syncPlan: {program: testProgram, discountConfiguration: {currencyCode: 'USD', generatedAt: '', tiers: []}},
+    };
+
+    const discountId = await ensureAutomaticDiscount(shopify.admin as never, configuration as never);
+
+    expect(discountId).toBe('gid://shopify/DiscountAutomaticNode/2');
+  });
+
+  it('updates the saved discount when it still exists', async () => {
+    const shopify = fakeAdmin({
+      LoyaltyAutomaticDiscountExists: ({id}) => ({automaticDiscountNode: {id}}),
+      LoyaltyAutomaticDiscountUpdate: () => ({
+        discountAutomaticAppUpdate: {automaticAppDiscount: {discountId: 'gid://shopify/DiscountAutomaticNode/7'}, userErrors: []},
+      }),
+    });
+    const configuration = {
+      currentDiscountId: 'gid://shopify/DiscountAutomaticNode/7',
+      syncPlan: {program: testProgram, discountConfiguration: {currencyCode: 'USD', generatedAt: '', tiers: []}},
+    };
+
+    const discountId = await ensureAutomaticDiscount(shopify.admin as never, configuration as never);
+
+    expect(discountId).toBe('gid://shopify/DiscountAutomaticNode/7');
+    expect(shopify.calls.map((call) => call.name)).not.toContain('LoyaltyAutomaticDiscountCreate');
+  });
 });
