@@ -18,34 +18,16 @@ import {describe, it, expect, vi, beforeEach} from 'vitest';
  * redemption IS applied → this test FAILS.
  */
 
-const applyRedemptionForCustomer = vi.fn(async () => ({
-  newBalance: 123,
-  redemption: {handle: 'free-shipping'},
-}));
-
-class RedemptionError extends Error {
-  status: number;
-  constructor(message: string, status: number) {
-    super(message);
-    this.status = status;
-  }
-}
-
-const fetchLoyaltyProgramConfiguration = vi.fn(async () => ({
-  syncPlan: {program: {id: 'program-1', currencyCode: 'USD'}},
-}));
+const saveLoyaltyCustomer = vi.fn(async () => {});
 
 const fakeAdmin = {graphql: vi.fn()};
 const unauthenticatedAdmin = vi.fn(async () => ({admin: fakeAdmin}));
 const authenticateAdmin = vi.fn(async () => ({admin: fakeAdmin}));
 
 vi.mock('../../../app/loyalty/customer-state.server', () => ({
-  applyRedemptionForCustomer,
-  RedemptionError,
-}));
-
-vi.mock('../../../app/loyalty/program.server', () => ({
-  fetchLoyaltyProgramConfiguration,
+  loadProgramSnapshot: vi.fn(async () => ({enabled: true, program: {redemptions: []}})),
+  loadLoyaltyCustomer: vi.fn(async () => ({id: 'gid://shopify/Customer/999999', balance: 10_000})),
+  saveLoyaltyCustomer,
 }));
 
 vi.mock('../../../app/shopify.server', () => ({
@@ -66,7 +48,7 @@ function buildRequest(body: Record<string, unknown>, headers: Record<string, str
 describe('C1 / IDOR: api.redeem per-customer authorization', () => {
   beforeEach(() => {
     process.env.LOYALTY_ENGINE_SHARED_SECRET = SHARED_SECRET;
-    applyRedemptionForCustomer.mockClear();
+    saveLoyaltyCustomer.mockClear();
   });
 
   it('rejects a shared-secret request that lacks per-customer authorization for the supplied customerAdminId (does not move points for arbitrary customers)', async () => {
@@ -86,9 +68,9 @@ describe('C1 / IDOR: api.redeem per-customer authorization', () => {
       },
     );
 
-    const response = await action({request} as any);
+    const response = await action({request} as never);
 
     expect([401, 403]).toContain(response.status);
-    expect(applyRedemptionForCustomer).not.toHaveBeenCalled();
+    expect(saveLoyaltyCustomer).not.toHaveBeenCalled();
   });
 });

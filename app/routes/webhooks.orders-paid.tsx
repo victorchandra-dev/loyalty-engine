@@ -6,18 +6,22 @@ import {
   getOrdersPaidOrderGid,
 } from '../../src/webhooks/orders-paid.js';
 import type {OrdersPaidWebhookPayload} from '../../src/webhooks/orders-paid.js';
-import {getOneShotEarnPoints} from '../../src/domain/program.js';
+import {projectPaidOrder} from '../../src/domain/customer-state.js';
 import {
-  creditReferrerForFirstPaidOrder,
-  fetchCustomerPointsState,
-  markRefereeReferralCredited,
-  projectPointsAwardForOrder,
-  syncCustomerLoyaltyState,
+  loadLoyaltyCustomer,
+  loadProgramSnapshot,
+  saveLoyaltyCustomer,
 } from '../loyalty/customer-state.server';
-import {fetchLoyaltyProgramConfiguration} from '../loyalty/program.server';
-import {fetchProgramEnabled} from '../loyalty/settings.server';
+import {runOnce} from '../loyalty/run-once.server';
 import {authenticate} from '../shopify.server';
 
+/**
+ * Award points for a paid order: order points, the first-order signup bonus,
+ * a referral bonus for both sides, and clearing the reward checkout applied.
+ *
+ * Each order is processed once (runOnce). Any failure returns 500 so Shopify
+ * retries; nothing is written unless the whole change is written.
+ */
 export const action = async ({request}: ActionFunctionArgs) => {
   const {payload, shop, topic, session, admin} =
     await authenticate.webhook(request);
@@ -28,126 +32,47 @@ export const action = async ({request}: ActionFunctionArgs) => {
     return new Response();
   }
 
-  const ordersPaidPayload = payload as OrdersPaidWebhookPayload;
-  const customerAdminId = getOrdersPaidCustomerAdminId(ordersPaidPayload);
-  const orderGid = getOrdersPaidOrderGid(ordersPaidPayload);
-
-  if (!customerAdminId) {
+  const order = payload as OrdersPaidWebhookPayload;
+  const customerAdminId = getOrdersPaidCustomerAdminId(order);
+  const orderGid = getOrdersPaidOrderGid(order);
+  if (!customerAdminId || !orderGid) {
     return new Response();
-  }
-
-  const {enabled} = await fetchProgramEnabled(admin);
-  if (!enabled) {
-    return new Response();
-  }
-
-  const configuration = await fetchLoyaltyProgramConfiguration(admin);
-
-  if (!configuration.syncPlan.program) {
-    return new Response();
-  }
-
-  // Compute points to award for this order. We read the customer's current
-  // balance + the awarded one-shot list, then layer on order points + any
-  // first-time one-shot awards (signup, etc.). Tier sync runs after using the
-  // new balance.
-  const program = configuration.syncPlan.program;
-  const orderAmount = getOrdersPaidOrderAmount(ordersPaidPayload);
-
-  let pointsBalance = 0;
-  const awardedRules: string[] = [];
-  let referralCreditNeeded: {
-    referrerId: string;
-    bonusPoints: number;
-  } | null = null;
-
-  try {
-    const currentState = await fetchCustomerPointsState(admin, customerAdminId);
-
-    // Idempotency: skip if this exact order was already processed.
-    if (orderGid && currentState.lastOrderId === orderGid) {
-      console.warn(
-        `[loyalty] Skipping duplicate orders/paid for order ${orderGid}`,
-      );
-      return new Response();
-    }
-
-    const projection = projectPointsAwardForOrder({
-      orderAmount,
-      currentBalance: currentState.pointsBalance,
-      signupAwarded: currentState.signupAwarded,
-      program,
-    });
-    pointsBalance = projection.newBalance;
-    if (
-      currentState.signupAwarded ||
-      projection.newlyAwardedOneShots.includes('signup')
-    ) {
-      awardedRules.push('signup');
-    }
-
-    // Referral credit fires on the referee's first eligible paid order. Both
-    // referrer and referee earn the `referral` earn rule's points_value
-    // (bilateral V1 model). We layer the referee's bonus on top of the
-    // projection here, and queue the referrer credit + the "credited" flag
-    // for after the sync below.
-    if (
-      currentState.referredBy &&
-      !currentState.referredByCredited &&
-      currentState.referredBy.referrerCustomerId !== customerAdminId
-    ) {
-      const bonus = getOneShotEarnPoints('referral', program.earnRules);
-      if (bonus > 0) {
-        pointsBalance = Math.max(0, pointsBalance + bonus);
-        referralCreditNeeded = {
-          referrerId: currentState.referredBy.referrerCustomerId,
-          bonusPoints: bonus,
-        };
-      }
-    }
-  } catch (error) {
-    // If the customer has no metafields yet, GraphQL returns nulls which the
-    // helper handles. Anything else we log and fall back to a zero-points
-    // sync rather than failing the webhook (Shopify would retry).
-    console.error('[loyalty] Failed to project order points', error);
-    Sentry.captureException(error, {extra: {customerAdminId, orderGid}});
   }
 
   try {
-    await syncCustomerLoyaltyState({
-      admin,
-      customerAdminId,
-      program,
-      pointsBalance,
-      awardedRules,
-      lastOrderId: orderGid ?? undefined,
+    await runOnce(`orders/paid:${orderGid}`, async () => {
+      const {enabled, program} = await loadProgramSnapshot(admin);
+      if (!enabled || !program) return;
+
+      const customer = await loadLoyaltyCustomer(admin, customerAdminId);
+      if (!customer) return;
+
+      const result = projectPaidOrder({
+        customer,
+        program,
+        orderAmount: getOrdersPaidOrderAmount(order),
+        orderCreatedAt: order.created_at ?? new Date().toISOString(),
+      });
+      const referrer = result.referral
+        ? await loadLoyaltyCustomer(admin, result.referral.referrerId)
+        : null;
+
+      await saveLoyaltyCustomer(admin, {
+        program,
+        customer,
+        balance: result.balance,
+        awardedRules: result.awardedRules,
+        ...(result.clearRedemption ? {activeRedemption: null} : {}),
+        referralCredited: Boolean(result.referral),
+        ...(result.referral && referrer
+          ? {referrer: {customer: referrer, balance: referrer.balance + result.referral.points}}
+          : {}),
+      });
     });
   } catch (error) {
-    // Log and return 200 so Shopify does not retry. A retry would re-read the
-    // pre-write balance and re-award the same points, causing a double credit.
-    console.error('[loyalty] Failed to sync customer loyalty state', error);
+    console.error('[loyalty] orders/paid failed; Shopify will retry', error);
     Sentry.captureException(error, {extra: {customerAdminId, orderGid}});
-    return new Response();
-  }
-
-  if (referralCreditNeeded) {
-    try {
-      await creditReferrerForFirstPaidOrder({
-        admin,
-        referrerId: referralCreditNeeded.referrerId,
-        bonusPoints: referralCreditNeeded.bonusPoints,
-      });
-      await markRefereeReferralCredited({
-        admin,
-        refereeId: customerAdminId,
-      });
-    } catch (error) {
-      // Best-effort: log and let a manual reconciliation pick this up. We
-      // don't fail the webhook because the referee's own state is already
-      // saved correctly.
-      console.error('[loyalty] Failed to credit referral', error);
-      Sentry.captureException(error, {extra: {customerAdminId, referralCreditNeeded}});
-    }
+    return new Response(null, {status: 500});
   }
 
   return new Response();

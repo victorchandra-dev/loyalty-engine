@@ -53,20 +53,6 @@ describe('buildCustomerLoyaltyState', () => {
     expect(state.awardedRules).toBeUndefined();
   });
 
-  it('includes lastOrderId when provided', () => {
-    const state = buildCustomerLoyaltyState({
-      metrics: metrics(),
-      program: program(),
-      lastOrderId: 'gid://shopify/Order/123',
-    });
-    expect(state.lastOrderId).toBe('gid://shopify/Order/123');
-  });
-
-  it('omits lastOrderId when not provided', () => {
-    const state = buildCustomerLoyaltyState({metrics: metrics(), program: program()});
-    expect(state.lastOrderId).toBeUndefined();
-  });
-
   it('includes a computedAt ISO timestamp', () => {
     const state = buildCustomerLoyaltyState({metrics: metrics(), program: program()});
     expect(new Date(state.computedAt).getTime()).toBeGreaterThan(0);

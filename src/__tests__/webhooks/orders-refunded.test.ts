@@ -1,10 +1,44 @@
 import {describe, it, expect} from 'vitest';
 import {
   getOrdersRefundedAmount,
+  getOrdersRefundedOrderGid,
+  getRefundGid,
   computeRefundPointsDebit,
 } from '../../webhooks/orders-refunded.js';
 import type {OrdersRefundedWebhookPayload} from '../../webhooks/orders-refunded.js';
 import type {LoyaltyEarnRuleConfig} from '../../domain/program.js';
+
+// Shaped like Shopify's refunds/create sample payload: the refund itself, with
+// order_id and top-level transactions. It carries no customer and no refunds[].
+// IDs are realistic 13-digit ones; the docs sample uses 18-digit IDs, which
+// lose precision as JS numbers (real order IDs are far below 2^53).
+const shopifyRefundsCreatePayload: OrdersRefundedWebhookPayload = {
+  id: 1088818604789,
+  order_id: 6209829119461,
+  admin_graphql_api_id: 'gid://shopify/Refund/1088818604789',
+  transactions: [
+    {amount: '41.94', kind: 'refund', status: 'success'},
+  ],
+};
+
+describe('refunds/create payload', () => {
+  it('reads the refunded amount from the top-level transactions', () => {
+    expect(getOrdersRefundedAmount(shopifyRefundsCreatePayload)).toBe(41.94);
+  });
+
+  it('builds the order GID from order_id', () => {
+    expect(getOrdersRefundedOrderGid(shopifyRefundsCreatePayload)).toBe(
+      'gid://shopify/Order/6209829119461',
+    );
+  });
+
+  it('uses the refund GID as the duplicate key', () => {
+    expect(getRefundGid(shopifyRefundsCreatePayload)).toBe(
+      'gid://shopify/Refund/1088818604789',
+    );
+    expect(getRefundGid({id: 7})).toBe('gid://shopify/Refund/7');
+  });
+});
 
 const rule = (pointsValue: number | null, active = true): LoyaltyEarnRuleConfig => ({
   id: 'order',
@@ -18,18 +52,11 @@ const rule = (pointsValue: number | null, active = true): LoyaltyEarnRuleConfig 
 });
 
 describe('getOrdersRefundedAmount', () => {
-  it('returns the refunded transaction amount', () => {
-    const payload: OrdersRefundedWebhookPayload = {
-      refunds: [{transactions: [{amount: '50.00', kind: 'refund', status: 'success'}]}],
-    };
-    expect(getOrdersRefundedAmount(payload)).toBe(50);
-  });
-
   it('sums multiple refund transactions', () => {
     const payload: OrdersRefundedWebhookPayload = {
-      refunds: [
-        {transactions: [{amount: '30.00', kind: 'refund', status: 'success'}]},
-        {transactions: [{amount: '20.00', kind: 'refund', status: 'success'}]},
+      transactions: [
+        {amount: '30.00', kind: 'refund', status: 'success'},
+        {amount: '20.00', kind: 'refund', status: 'success'},
       ],
     };
     expect(getOrdersRefundedAmount(payload)).toBe(50);
@@ -37,21 +64,21 @@ describe('getOrdersRefundedAmount', () => {
 
   it('skips non-refund transaction kinds', () => {
     const payload: OrdersRefundedWebhookPayload = {
-      refunds: [{transactions: [{amount: '100.00', kind: 'sale', status: 'success'}]}],
+      transactions: [{amount: '100.00', kind: 'sale', status: 'success'}],
     };
     expect(getOrdersRefundedAmount(payload)).toBe(0);
   });
 
   it('skips failed transactions', () => {
     const payload: OrdersRefundedWebhookPayload = {
-      refunds: [{transactions: [{amount: '100.00', kind: 'refund', status: 'failure'}]}],
+      transactions: [{amount: '100.00', kind: 'refund', status: 'failure'}],
     };
     expect(getOrdersRefundedAmount(payload)).toBe(0);
   });
 
-  it('returns 0 for empty refunds', () => {
+  it('returns 0 when there are no transactions', () => {
     expect(getOrdersRefundedAmount({})).toBe(0);
-    expect(getOrdersRefundedAmount({refunds: []})).toBe(0);
+    expect(getOrdersRefundedAmount({transactions: []})).toBe(0);
   });
 });
 

@@ -1,26 +1,8 @@
-export const CUSTOMER_SPEND_QUERY = `#graphql
-  query LoyaltyCustomerSpend($id: ID!) {
-    customer(id: $id) {
-      id
-      amountSpent {
-        amount
-        currencyCode
-      }
-      numberOfOrders
-    }
-  }
-` as const;
-
 export const CUSTOMERS_PAGE_QUERY = `#graphql
   query LoyaltyCustomersPage($first: Int!, $after: String) {
     customers(first: $first, after: $after, sortKey: ID) {
       nodes {
         id
-        amountSpent {
-          amount
-          currencyCode
-        }
-        numberOfOrders
       }
       pageInfo {
         hasNextPage

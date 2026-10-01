@@ -1,3 +1,4 @@
+import {computeOrderPoints, getOneShotEarnPoints} from './program.js';
 import type {
   LoyaltyBenefitConfig,
   LoyaltyProgramConfig,
@@ -23,11 +24,6 @@ export type CustomerLoyaltyState = {
    * because legacy state records won't have it; missing means "none awarded".
    */
   awardedRules?: string[];
-  /**
-   * GID of the last order that triggered a points award. Used by the
-   * orders/paid webhook handler to skip duplicate deliveries.
-   */
-  lastOrderId?: string;
 };
 
 export function buildCustomerLoyaltyState({
@@ -35,13 +31,11 @@ export function buildCustomerLoyaltyState({
   metrics,
   program,
   awardedRules,
-  lastOrderId,
 }: {
   computedAt?: string;
   metrics: CustomerMetricSnapshot;
   program: LoyaltyProgramConfig;
   awardedRules?: string[];
-  lastOrderId?: string;
 }): CustomerLoyaltyState {
   const qualifiedTiers = getQualifiedTiers(program, metrics);
   const currentTier = qualifiedTiers.at(-1) ?? null;
@@ -59,7 +53,6 @@ export function buildCustomerLoyaltyState({
     ...(awardedRules && awardedRules.length > 0
       ? {awardedRules: [...new Set(awardedRules)]}
       : {}),
-    ...(lastOrderId ? {lastOrderId} : {}),
   };
 }
 
@@ -180,5 +173,156 @@ export function projectManualAward({
     newAwardedRules: rule.repeatable
       ? awardedRules
       : [...new Set([...awardedRules, rule.handle])],
+  };
+}
+
+/**
+ * How long a redeemed reward stays usable at checkout (owner's call, 1 Oct
+ * 2026: 30 days). The storefront shows and hides the reward by this expiry,
+ * so it must stay on the record. Unused rewards don't return their points.
+ */
+export const REDEMPTION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+/** The reward a customer has redeemed and not yet used at checkout. */
+export type ActiveRedemption = {
+  handle: string;
+  rewardType: string;
+  rewardValue: string | null;
+  pointsCost: number;
+  expiresAt: string;
+  redemptionId: string | null;
+  redeemedAt: string;
+};
+
+/** Everything the engine reads about one customer before changing points. */
+export type LoyaltyCustomer = {
+  id: string;
+  balance: number;
+  /** compareDigest of the balance metafield; null when it doesn't exist yet. */
+  balanceDigest: string | null;
+  awardedRules: string[];
+  activeRedemption: ActiveRedemption | null;
+  referrerId: string | null;
+  referralCredited: boolean;
+  lifetimeSpend: number;
+  paidOrderCount: number;
+  currencyCode: string;
+};
+
+export function isRedemptionActive(
+  redemption: ActiveRedemption | null,
+  now: Date,
+): boolean {
+  return redemption !== null && Date.parse(redemption.expiresAt) > now.getTime();
+}
+
+/**
+ * What a paid order changes: order points, the signup bonus on the first
+ * paid order, the referral bonus on a referred customer's first paid order
+ * (plus the referrer's matching credit), and clearing a reward that checkout
+ * already applied to this order.
+ */
+export function projectPaidOrder({
+  customer,
+  program,
+  orderAmount,
+  orderCreatedAt,
+}: {
+  customer: LoyaltyCustomer;
+  program: LoyaltyProgramConfig;
+  orderAmount: number;
+  orderCreatedAt: string;
+}): {
+  balance: number;
+  awardedRules: string[];
+  clearRedemption: boolean;
+  referral: {referrerId: string; points: number} | null;
+} {
+  let points = computeOrderPoints({orderAmount, earnRules: program.earnRules});
+  const awardedRules = [...customer.awardedRules];
+
+  if (!awardedRules.includes('signup')) {
+    const signup = getOneShotEarnPoints('signup', program.earnRules);
+    if (signup > 0) {
+      points += signup;
+      awardedRules.push('signup');
+    }
+  }
+
+  let referral: {referrerId: string; points: number} | null = null;
+  if (
+    customer.referrerId &&
+    !customer.referralCredited &&
+    customer.referrerId !== customer.id
+  ) {
+    const bonus = getOneShotEarnPoints('referral', program.earnRules);
+    if (bonus > 0) {
+      points += bonus;
+      referral = {referrerId: customer.referrerId, points: bonus};
+    }
+  }
+
+  // The discount function applies an active reward to every checkout, so a
+  // reward that existed when this order was placed was used on it.
+  const redemption = customer.activeRedemption;
+  const clearRedemption =
+    redemption !== null &&
+    !(Date.parse(redemption.redeemedAt) > Date.parse(orderCreatedAt));
+
+  return {
+    balance: Math.max(0, customer.balance + points),
+    awardedRules,
+    clearRedemption,
+    referral,
+  };
+}
+
+/** Redeem a reward: one active reward at a time, paid for up front. */
+export function projectRedemption({
+  customer,
+  program,
+  handle,
+  now,
+}: {
+  customer: LoyaltyCustomer;
+  program: LoyaltyProgramConfig;
+  handle: string;
+  now: Date;
+}):
+  | {ok: true; balance: number; activeRedemption: ActiveRedemption}
+  | {ok: false; status: 400 | 404 | 409; message: string} {
+  const reward = program.redemptions.find(
+    (entry) => entry.handle === handle && entry.active,
+  );
+  if (!reward) {
+    return {ok: false, status: 404, message: `No active reward "${handle}".`};
+  }
+  if (isRedemptionActive(customer.activeRedemption, now)) {
+    return {
+      ok: false,
+      status: 409,
+      message: 'You already have a reward waiting. Use it at checkout first.',
+    };
+  }
+  if (customer.balance < reward.pointsCost) {
+    return {
+      ok: false,
+      status: 400,
+      message: `You have ${customer.balance} points; this reward needs ${reward.pointsCost}.`,
+    };
+  }
+
+  return {
+    ok: true,
+    balance: customer.balance - reward.pointsCost,
+    activeRedemption: {
+      handle: reward.handle,
+      rewardType: reward.rewardType,
+      rewardValue: reward.rewardValue ?? null,
+      pointsCost: reward.pointsCost,
+      expiresAt: new Date(now.getTime() + REDEMPTION_TTL_MS).toISOString(),
+      redemptionId: reward.id,
+      redeemedAt: now.toISOString(),
+    },
   };
 }

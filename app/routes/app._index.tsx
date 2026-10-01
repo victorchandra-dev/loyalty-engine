@@ -168,9 +168,13 @@ export const action = async ({request}: ActionFunctionArgs): Promise<ActionData>
         const result = await backfillCustomerLoyaltyLevels(admin);
 
         return {
-          status: 'success',
+          status: result.failedCustomers > 0 ? 'error' : 'success',
           intent,
-          message: `Customer loyalty levels were synced for ${result.syncedCustomers} customer(s).`,
+          message:
+            `Customer loyalty levels were synced for ${result.syncedCustomers} customer(s).` +
+            (result.failedCustomers > 0
+              ? ` ${result.failedCustomers} couldn't be read and were left unchanged; run the sync again.`
+              : ''),
           syncedAt: new Date().toISOString(),
           syncedCustomers: result.syncedCustomers,
         };

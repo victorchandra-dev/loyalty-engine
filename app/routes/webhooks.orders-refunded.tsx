@@ -1,19 +1,26 @@
 import type {ActionFunctionArgs} from 'react-router';
 import * as Sentry from '@sentry/node';
 import {
-  getOrdersRefundedCustomerAdminId,
+  computeRefundPointsDebit,
   getOrdersRefundedAmount,
   getOrdersRefundedOrderGid,
-  computeRefundPointsDebit,
+  getRefundGid,
 } from '../../src/webhooks/orders-refunded.js';
 import type {OrdersRefundedWebhookPayload} from '../../src/webhooks/orders-refunded.js';
 import {
-  fetchCustomerPointsState,
-  syncCustomerLoyaltyState,
+  fetchOrderCustomerId,
+  loadLoyaltyCustomer,
+  loadProgramSnapshot,
+  saveLoyaltyCustomer,
 } from '../loyalty/customer-state.server';
-import {fetchLoyaltyProgramConfiguration} from '../loyalty/program.server';
+import {runOnce} from '../loyalty/run-once.server';
 import {authenticate} from '../shopify.server';
 
+/**
+ * Take back the points a refund reverses (refunds/create). The payload is the
+ * refund itself, so the customer is looked up from its order. Each refund is
+ * processed once; failures return 500 so Shopify retries.
+ */
 export const action = async ({request}: ActionFunctionArgs) => {
   const {payload, shop, topic, session, admin} =
     await authenticate.webhook(request);
@@ -24,60 +31,41 @@ export const action = async ({request}: ActionFunctionArgs) => {
     return new Response();
   }
 
-  const refundPayload = payload as OrdersRefundedWebhookPayload;
-  const customerAdminId = getOrdersRefundedCustomerAdminId(refundPayload);
-  const orderGid = getOrdersRefundedOrderGid(refundPayload);
-
-  if (!customerAdminId) {
-    return new Response();
-  }
-
-  const configuration = await fetchLoyaltyProgramConfiguration(admin);
-  if (!configuration.syncPlan.program) {
-    return new Response();
-  }
-
-  const program = configuration.syncPlan.program;
-  const refundedAmount = getOrdersRefundedAmount(refundPayload);
-
-  if (refundedAmount <= 0) {
-    // No monetary refund (e.g. restocking-only refund) — nothing to debit.
+  const refund = payload as OrdersRefundedWebhookPayload;
+  const refundGid = getRefundGid(refund);
+  const orderGid = getOrdersRefundedOrderGid(refund);
+  const refundedAmount = getOrdersRefundedAmount(refund);
+  if (!refundGid || !orderGid || refundedAmount <= 0) {
+    // No money refunded (e.g. a restock-only refund): nothing to take back.
     return new Response();
   }
 
   try {
-    const currentState = await fetchCustomerPointsState(admin, customerAdminId);
+    await runOnce(`refunds/create:${refundGid}`, async () => {
+      const {program} = await loadProgramSnapshot(admin);
+      if (!program) return;
 
-    const debit = computeRefundPointsDebit({
-      refundedAmount,
-      earnRules: program.earnRules,
-    });
+      const debit = computeRefundPointsDebit({
+        refundedAmount,
+        earnRules: program.earnRules,
+      });
+      if (debit <= 0) return;
 
-    if (debit <= 0) {
-      // No active `order` earn rule means no points were awarded, nothing to reverse.
-      return new Response();
-    }
+      const customerAdminId = await fetchOrderCustomerId(admin, orderGid);
+      if (!customerAdminId) return;
+      const customer = await loadLoyaltyCustomer(admin, customerAdminId);
+      if (!customer) return;
 
-    const newBalance = Math.max(0, currentState.pointsBalance - debit);
-
-    console.warn(
-      `[loyalty] Refund rollback for order ${orderGid ?? 'unknown'}: ` +
-        `debit ${debit} pts (refund $${refundedAmount}), ` +
-        `balance ${currentState.pointsBalance} → ${newBalance}`,
-    );
-
-    await syncCustomerLoyaltyState({
-      admin,
-      customerAdminId,
-      program,
-      pointsBalance: newBalance,
-      awardedRules: currentState.awardedRules,
-      lastOrderId: currentState.lastOrderId ?? undefined,
+      await saveLoyaltyCustomer(admin, {
+        program,
+        customer,
+        balance: Math.max(0, customer.balance - debit),
+      });
     });
   } catch (error) {
-    console.error('[loyalty] Failed to process refund rollback', error);
-    Sentry.captureException(error, {extra: {customerAdminId, orderGid, refundedAmount}});
-    // Return 200 so Shopify does not retry — log is the alert signal here.
+    console.error('[loyalty] refunds/create failed; Shopify will retry', error);
+    Sentry.captureException(error, {extra: {refundGid, orderGid, refundedAmount}});
+    return new Response(null, {status: 500});
   }
 
   return new Response();

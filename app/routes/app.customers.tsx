@@ -1,12 +1,8 @@
 import type {ActionFunctionArgs, HeadersFunction, LoaderFunctionArgs} from 'react-router';
-import {Form, Link, useActionData, useLoaderData, useNavigation, useSearchParams} from 'react-router';
+import {Form, Link, useActionData, useLoaderData, useSearchParams} from 'react-router';
 import {boundary} from '@shopify/shopify-app-react-router/server';
 import {fetchLoyaltyProgramConfiguration} from '../loyalty/program.server';
-import {
-  reconcilePendingReferrals,
-  awardEarnRuleToCustomer,
-  type ReconcileReferralsResult,
-} from '../loyalty/customer-state.server';
+import {awardEarnRuleToCustomer} from '../loyalty/customer-state.server';
 import {isManualEarnEligible} from '../loyalty/constants';
 import {adminGraphql} from '../loyalty/graphql.server';
 import {authenticate} from '../shopify.server';
@@ -83,25 +79,16 @@ export const action = async ({request}: ActionFunctionArgs) => {
   const configuration = await fetchLoyaltyProgramConfiguration(admin);
   const program = configuration.syncPlan.program;
 
-  if (intent === 'awardEarnRule') {
-    const customerId = formData.get('customerId');
-    const ruleHandle = formData.get('ruleHandle');
-    if (typeof customerId !== 'string' || !customerId || typeof ruleHandle !== 'string' || !ruleHandle) {
-      return {award: {status: 'rejected' as const, message: 'Pick a reward to award.', customerId: typeof customerId === 'string' ? customerId : ''}};
-    }
-    if (!program) {
-      return {award: {status: 'rejected' as const, message: 'Initialize the program first.', customerId}};
-    }
-    const result = await awardEarnRuleToCustomer({admin, customerAdminId: customerId, ruleHandle, program});
-    return {award: {...result, customerId}};
+  const customerId = formData.get('customerId');
+  const ruleHandle = formData.get('ruleHandle');
+  if (intent !== 'awardEarnRule' || typeof customerId !== 'string' || !customerId || typeof ruleHandle !== 'string' || !ruleHandle) {
+    return {award: {status: 'rejected' as const, message: 'Pick a reward to award.', customerId: typeof customerId === 'string' ? customerId : ''}};
   }
-
-  // Default intent: reconcile pending referrals.
-  const bonusPoints = program
-    ? (program.earnRules.find((r) => r.active && r.action === 'referral')?.pointsValue ?? 0)
-    : 0;
-  const result = await reconcilePendingReferrals(admin, bonusPoints);
-  return {reconcile: result};
+  if (!program) {
+    return {award: {status: 'rejected' as const, message: 'Initialize the program first.', customerId}};
+  }
+  const result = await awardEarnRuleToCustomer({admin, customerAdminId: customerId, ruleHandle, program});
+  return {award: {...result, customerId}};
 };
 
 export const loader = async ({request}: LoaderFunctionArgs) => {
@@ -186,15 +173,9 @@ export const loader = async ({request}: LoaderFunctionArgs) => {
 export default function CustomersRoute() {
   const data = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
-  const navigation = useNavigation();
   const [params] = useSearchParams();
   const currentCursor = params.get('after');
-  const isReconciling = navigation.state === 'submitting';
-  const awardResult = actionData && 'award' in actionData ? actionData.award : undefined;
-  const reconcileResult =
-    actionData && 'reconcile' in actionData
-      ? (actionData.reconcile as ReconcileReferralsResult)
-      : undefined;
+  const awardResult = actionData?.award;
 
   const totalActive = data.rows.filter((r) => r.hasActiveRedemption).length;
   const totalPoints = data.rows.reduce((sum, r) => sum + r.pointsBalance, 0);
@@ -333,41 +314,6 @@ export default function CustomersRoute() {
             </Link>
           ) : null}
         </s-stack>
-      </s-section>
-
-      <s-section heading="Referral reconciliation">
-        <s-paragraph>
-          Re-attempt referral credit for customers whose referrer was not
-          credited due to a transient failure during their first order.
-        </s-paragraph>
-
-        {reconcileResult ? (
-          <s-banner
-            tone={reconcileResult.failed.length > 0 ? 'warning' : 'success'}
-            heading={
-              reconcileResult.attempted === 0
-                ? 'No pending referrals found'
-                : `Reconciled ${reconcileResult.succeeded} of ${reconcileResult.attempted}`
-            }
-          >
-            {reconcileResult.failed.length > 0 ? (
-              <s-paragraph>
-                Failed: {reconcileResult.failed.map((f) => f.refereeId).join(', ')}
-              </s-paragraph>
-            ) : null}
-          </s-banner>
-        ) : null}
-
-        <Form method="post">
-          <input type="hidden" name="intent" value="reconcile" />
-          <s-button
-            variant="secondary"
-            type="submit"
-            disabled={isReconciling || undefined}
-          >
-            {isReconciling ? 'Reconciling…' : 'Reconcile pending referrals'}
-          </s-button>
-        </Form>
       </s-section>
     </s-page>
   );

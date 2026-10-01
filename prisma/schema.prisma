@@ -26,3 +26,12 @@ model Session {
   refreshToken        String?
   refreshTokenExpires DateTime?
 }
+
+// One row per webhook event already handled (topic + resource GID), so
+// Shopify's duplicate and retried deliveries award or debit points once.
+// ponytail: never pruned; it grows one tiny row per order/refund. Prune by
+// createdAt if it ever matters.
+model ProcessedWebhook {
+  key       String   @id
+  createdAt DateTime @default(now())
+}

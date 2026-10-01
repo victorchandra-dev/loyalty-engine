@@ -1,11 +1,9 @@
-import {buildCustomerLoyaltyState} from '../domain/customer-state.js';
-import type {LoyaltyProgramConfig} from '../domain/program.js';
-
 export type OrdersPaidWebhookPayload = {
   id?: number | null;
   admin_graphql_api_id?: string | null;
   admin_graphql_api_customer_id?: string | null;
   current_total_price?: string | null;
+  created_at?: string | null;
   customer?: {
     id?: number | null;
   } | null;
@@ -19,11 +17,6 @@ export function getOrdersPaidOrderGid(
   return null;
 }
 
-export type OrdersPaidSyncPlan = {
-  customerAdminId: string;
-  loyaltyStateValue: string;
-};
-
 export function getOrdersPaidCustomerAdminId(
   payload: OrdersPaidWebhookPayload,
 ) {
@@ -36,43 +29,6 @@ export function getOrdersPaidCustomerAdminId(
   }
 
   return null;
-}
-
-export function buildOrdersPaidSyncPlan({
-  currencyCode,
-  customerAdminId,
-  lifetimeSpend,
-  numberOfOrders,
-  pointsBalance = 0,
-  awardedRules,
-  lastOrderId,
-  program,
-}: {
-  currencyCode: string;
-  customerAdminId: string;
-  lifetimeSpend: number;
-  numberOfOrders: number;
-  pointsBalance?: number;
-  awardedRules?: string[];
-  lastOrderId?: string;
-  program: LoyaltyProgramConfig;
-}): OrdersPaidSyncPlan {
-  const loyaltyState = buildCustomerLoyaltyState({
-    metrics: {
-      lifetimeSpend,
-      paidOrderCount: numberOfOrders,
-      pointsBalance,
-      currencyCode,
-    },
-    awardedRules,
-    lastOrderId,
-    program,
-  });
-
-  return {
-    customerAdminId,
-    loyaltyStateValue: JSON.stringify(loyaltyState),
-  };
 }
 
 export function getOrdersPaidOrderAmount(payload: OrdersPaidWebhookPayload) {

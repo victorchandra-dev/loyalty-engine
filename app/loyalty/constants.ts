@@ -17,14 +17,6 @@ export const CUSTOMER_LOYALTY_REFERRED_BY_CREDITED_KEY =
   'loyalty_referred_by_credited';
 
 /**
- * Default lifetime of an applied redemption before the discount function
- * stops honouring it (24 hours). The redemption helper sets `expiresAt` based
- * on this when writing the metafield, and the function ignores expired
- * records. Reasonable for one-checkout reservations; tune per merchant.
- */
-export const REDEMPTION_TTL_MS = 24 * 60 * 60 * 1000;
-
-/**
  * Metaobject types managed by the loyalty engine. Tier + benefit are existing.
  * Earn rule + redemption were added to support points + redemption catalog;
  * they are read alongside tiers when building the program snapshot. See

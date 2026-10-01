@@ -1,10 +1,11 @@
 import type {ActionFunctionArgs} from 'react-router';
 import type {AdminApiContext} from '@shopify/shopify-app-react-router/server';
+import {projectRedemption} from '../../src/domain/customer-state.js';
 import {
-  applyRedemptionForCustomer,
-  RedemptionError,
+  loadLoyaltyCustomer,
+  loadProgramSnapshot,
+  saveLoyaltyCustomer,
 } from '../loyalty/customer-state.server';
-import {fetchLoyaltyProgramConfiguration} from '../loyalty/program.server';
 import {
   AuthError,
   resolveAdminContext,
@@ -88,33 +89,43 @@ export const action = async ({request}: ActionFunctionArgs) => {
     }
   }
 
-  const configuration = await fetchLoyaltyProgramConfiguration(admin);
-  if (!configuration.syncPlan.program) {
-    return Response.json(
-      {error: 'Program is not initialised. Run sync first.'},
-      {status: 409},
-    );
-  }
-
   try {
-    const result = await applyRedemptionForCustomer({
-      admin,
-      customerAdminId,
-      redemptionHandle,
-      program: configuration.syncPlan.program,
+    const {enabled, program} = await loadProgramSnapshot(admin);
+    if (!enabled || !program) {
+      return Response.json({error: 'The loyalty program is not active.'}, {status: 409});
+    }
+    const customer = await loadLoyaltyCustomer(admin, customerAdminId);
+    if (!customer) {
+      return Response.json({error: 'Customer not found.'}, {status: 404});
+    }
+
+    const result = projectRedemption({
+      customer,
+      program,
+      handle: redemptionHandle,
+      now: new Date(),
+    });
+    if (!result.ok) {
+      return Response.json({error: result.message}, {status: result.status});
+    }
+
+    // Fails if the balance changed since it was read (e.g. a double click),
+    // so points are never spent twice.
+    await saveLoyaltyCustomer(admin, {
+      program,
+      customer,
+      balance: result.balance,
+      activeRedemption: result.activeRedemption,
     });
     return Response.json({
       ok: true,
-      newBalance: result.newBalance,
-      redemption: result.redemption,
+      newBalance: result.balance,
+      redemption: result.activeRedemption,
     });
   } catch (error) {
-    if (error instanceof RedemptionError) {
-      return Response.json({error: error.message}, {status: error.status});
-    }
-    console.error('[loyalty] applyRedemptionForCustomer failed', error);
+    console.error('[loyalty] redeem failed', error);
     return Response.json(
-      {error: 'Failed to apply redemption.'},
+      {error: 'Failed to apply redemption. Please try again.'},
       {status: 500},
     );
   }

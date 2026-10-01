@@ -22,8 +22,9 @@ import {
 } from './constants';
 import {adminGraphql, assertNoUserErrors} from './graphql.server';
 import {
-  fetchCustomerPointsState,
-  syncCustomerLoyaltyStateFromMetrics,
+  loadLoyaltyCustomer,
+  loadProgramSnapshot,
+  saveLoyaltyCustomer,
 } from './customer-state.server';
 import {seedDefaultEarnRulesAndRedemptions} from './earn-rules-redemptions-admin.server';
 
@@ -93,14 +94,7 @@ type DiscountAutomaticMutationData = {
 
 type CustomersPageQueryData = {
   customers: {
-    nodes: Array<{
-      id: string;
-      amountSpent: {
-        amount: string;
-        currencyCode: string;
-      } | null;
-      numberOfOrders: number;
-    }>;
+    nodes: Array<{id: string}>;
     pageInfo: {
       hasNextPage: boolean;
       endCursor: string | null;
@@ -365,16 +359,22 @@ export async function saveTierConfiguration({
   };
 }
 
+/**
+ * Recompute every customer's tier state from their current spend. Points,
+ * one-time awards and any waiting reward are written back exactly as read;
+ * a customer that can't be read is skipped, never written with a guess.
+ */
 export async function backfillCustomerLoyaltyLevels(admin: AdminApiContext) {
-  const configuration = await fetchLoyaltyProgramConfiguration(admin);
+  const {program} = await loadProgramSnapshot(admin);
 
-  if (!configuration.syncPlan.program) {
+  if (!program) {
     throw new Error(
       'The loyalty program is not resolved yet. Initialize the program before syncing customers.',
     );
   }
 
   let syncedCustomers = 0;
+  let failedCustomers = 0;
   let cursor: string | null = null;
 
   do {
@@ -387,37 +387,16 @@ export async function backfillCustomerLoyaltyLevels(admin: AdminApiContext) {
       },
     );
 
-    for (const customer of page.customers.nodes) {
-      const lifetimeSpend = Number.parseFloat(customer.amountSpent?.amount ?? '0');
-      const currencyCode =
-        customer.amountSpent?.currencyCode ?? configuration.currencyCode;
-
-      // Round-trip the customer's existing points balance and awardedRules so
-      // a backfill doesn't wipe one-shot bonuses already credited (e.g. signup).
-      let pointsBalance = 0;
-      let awardedRules: string[] | undefined;
+    for (const {id} of page.customers.nodes) {
       try {
-        const existing = await fetchCustomerPointsState(admin, customer.id);
-        pointsBalance = existing.pointsBalance;
-        if (existing.signupAwarded) {
-          awardedRules = ['signup'];
-        }
-      } catch {
-        // First-time backfill or transient error — fall back to zero.
+        const customer = await loadLoyaltyCustomer(admin, id);
+        if (!customer) continue;
+        await saveLoyaltyCustomer(admin, {program, customer, balance: customer.balance});
+        syncedCustomers += 1;
+      } catch (error) {
+        failedCustomers += 1;
+        console.error(`[loyalty] Skipped customer ${id} during sync`, error);
       }
-
-      await syncCustomerLoyaltyStateFromMetrics({
-        admin,
-        customerAdminId: customer.id,
-        currencyCode,
-        lifetimeSpend: Number.isFinite(lifetimeSpend) ? lifetimeSpend : 0,
-        numberOfOrders: Number(customer.numberOfOrders ?? 0),
-        program: configuration.syncPlan.program,
-        pointsBalance,
-        awardedRules,
-      });
-
-      syncedCustomers += 1;
     }
 
     cursor = page.customers.pageInfo.endCursor;
@@ -429,7 +408,8 @@ export async function backfillCustomerLoyaltyLevels(admin: AdminApiContext) {
 
   return {
     syncedCustomers,
-    tierCount: configuration.syncPlan.program.tiers.length,
+    failedCustomers,
+    tierCount: program.tiers.length,
   };
 }
 
@@ -613,15 +593,16 @@ async function applyTierEntries(
   }
 }
 
-async function ensureAutomaticDiscount(
+/**
+ * The automatic discount runs the loyalty function, which applies both tier
+ * discounts and redeemed rewards, so it must exist whenever a program does,
+ * even if no tier gives a discount.
+ */
+export async function ensureAutomaticDiscount(
   admin: AdminApiContext,
   configuration: LoyaltyProgramConfiguration,
 ) {
   if (!configuration.syncPlan.program) {
-    return configuration.currentDiscountId;
-  }
-
-  if (!configuration.syncPlan.discountConfiguration?.tiers.length) {
     return configuration.currentDiscountId;
   }
 
