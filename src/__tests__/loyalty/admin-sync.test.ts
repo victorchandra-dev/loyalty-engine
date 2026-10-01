@@ -70,7 +70,7 @@ describe('Checkout discount', () => {
 
   it('is recreated when the saved discount was deleted, instead of failing the sync', async () => {
     const shopify = fakeAdmin({
-      LoyaltyAutomaticDiscountExists: () => ({automaticDiscountNode: null}),
+      LoyaltyAutomaticDiscountExists: () => ({discountNode: null}),
       LoyaltyAutomaticDiscountCreate: () => ({
         discountAutomaticAppCreate: {automaticAppDiscount: {discountId: 'gid://shopify/DiscountAutomaticNode/2'}, userErrors: []},
       }),
@@ -90,7 +90,7 @@ describe('Checkout discount', () => {
 
   it('updates the saved discount when it still exists', async () => {
     const shopify = fakeAdmin({
-      LoyaltyAutomaticDiscountExists: ({id}) => ({automaticDiscountNode: {id}}),
+      LoyaltyAutomaticDiscountExists: ({id}) => ({discountNode: {id}}),
       LoyaltyAutomaticDiscountUpdate: () => ({
         discountAutomaticAppUpdate: {automaticAppDiscount: {discountId: 'gid://shopify/DiscountAutomaticNode/7'}, userErrors: []},
       }),

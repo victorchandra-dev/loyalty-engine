@@ -595,7 +595,7 @@ async function applyTierEntries(
 
 const AUTOMATIC_DISCOUNT_EXISTS_QUERY = `#graphql
   query LoyaltyAutomaticDiscountExists($id: ID!) {
-    automaticDiscountNode(id: $id) {
+    discountNode(id: $id) {
       id
     }
   }
@@ -631,14 +631,14 @@ export async function ensureAutomaticDiscount(
   // with a dev preview). Only update a discount that still exists; otherwise
   // create a new one, and the caller saves its ID.
   const saved = configuration.currentDiscountId
-    ? await adminGraphql<{automaticDiscountNode: {id: string} | null}>(
+    ? await adminGraphql<{discountNode: {id: string} | null}>(
         admin,
         AUTOMATIC_DISCOUNT_EXISTS_QUERY,
         {id: configuration.currentDiscountId},
       )
     : null;
 
-  if (configuration.currentDiscountId && saved?.automaticDiscountNode) {
+  if (configuration.currentDiscountId && saved?.discountNode) {
     const result = await adminGraphql<DiscountAutomaticMutationData>(
       admin,
       DISCOUNT_AUTOMATIC_APP_UPDATE_MUTATION,
