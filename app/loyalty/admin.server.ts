@@ -40,7 +40,9 @@ import {
 } from './customer-state.server';
 import {seedDefaultEarnRulesAndRedemptions} from './earn-rules-redemptions-admin.server';
 
-const CUSTOMER_SYNC_PAGE_SIZE = 50;
+// ~1 s per customer (one read, one write), so a page stays well inside
+// Cloud Run's 60 s request timeout.
+const CUSTOMER_SYNC_PAGE_SIZE = 20;
 
 export type LoyaltyTierEditorEntry = {
   id: string | null;
@@ -349,11 +351,16 @@ export async function saveTierConfiguration({
 }
 
 /**
- * Recompute every customer's tier state from their current spend. Points,
- * one-time awards and any waiting reward are written back exactly as read;
- * a customer that can't be read is skipped, never written with a guess.
+ * Recompute one page of customers' tier state from their current spend.
+ * Points, one-time awards and any waiting reward are written back exactly as
+ * read; a customer that can't be read is skipped, never written with a guess.
+ * Returns the cursor of the next page (null when done); the admin page calls
+ * again with it until every customer is synced.
  */
-export async function backfillCustomerLoyaltyLevels(admin: AdminApiContext) {
+export async function backfillCustomerLoyaltyLevels(
+  admin: AdminApiContext,
+  after: string | null = null,
+) {
   const {program} = await loadProgramSnapshot(admin);
 
   if (!program) {
@@ -362,43 +369,30 @@ export async function backfillCustomerLoyaltyLevels(admin: AdminApiContext) {
     );
   }
 
+  const page: CustomersPageQueryData = await adminGraphql<CustomersPageQueryData>(
+    admin,
+    CUSTOMERS_PAGE_QUERY,
+    {first: CUSTOMER_SYNC_PAGE_SIZE, ...(after ? {after} : {})},
+  );
+
   let syncedCustomers = 0;
   let failedCustomers = 0;
-  let cursor: string | null = null;
-
-  do {
-    const page: CustomersPageQueryData = await adminGraphql<CustomersPageQueryData>(
-      admin,
-      CUSTOMERS_PAGE_QUERY,
-      {
-        first: CUSTOMER_SYNC_PAGE_SIZE,
-        ...(cursor ? {after: cursor} : {}),
-      },
-    );
-
-    for (const {id} of page.customers.nodes) {
-      try {
-        const customer = await loadLoyaltyCustomer(admin, id);
-        if (!customer) continue;
-        await saveLoyaltyCustomer(admin, {program, customer, balance: customer.balance});
-        syncedCustomers += 1;
-      } catch (error) {
-        failedCustomers += 1;
-        console.error(`[loyalty] Skipped customer ${id} during sync`, error);
-      }
+  for (const {id} of page.customers.nodes) {
+    try {
+      const customer = await loadLoyaltyCustomer(admin, id);
+      if (!customer) continue;
+      await saveLoyaltyCustomer(admin, {program, customer, balance: customer.balance});
+      syncedCustomers += 1;
+    } catch (error) {
+      failedCustomers += 1;
+      console.error(`[loyalty] Skipped customer ${id} during sync`, error);
     }
-
-    cursor = page.customers.pageInfo.endCursor;
-
-    if (!page.customers.pageInfo.hasNextPage) {
-      break;
-    }
-  } while (cursor);
+  }
 
   return {
     syncedCustomers,
     failedCustomers,
-    tierCount: program.tiers.length,
+    nextCursor: page.customers.pageInfo.hasNextPage ? page.customers.pageInfo.endCursor : null,
   };
 }
 

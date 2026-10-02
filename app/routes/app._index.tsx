@@ -48,6 +48,7 @@ import {
 } from '../loyalty/settings.server';
 import {fetchLoyaltyProgramConfiguration} from '../loyalty/program.server';
 import {authenticate} from '../shopify.server';
+import {describeCustomerSync} from '../../src/domain/customer-sync.js';
 
 type ActionData = {
   status: 'success' | 'error';
@@ -67,6 +68,9 @@ type ActionData = {
   earnRuleEditorEntries?: LoyaltyEarnRuleEditorEntry[];
   redemptionEditorEntries?: LoyaltyRedemptionEditorEntry[];
   syncedCustomers?: number;
+  failedCustomers?: number;
+  /** Set while "Sync customers" has more pages; the page submits it back. */
+  nextCursor?: string | null;
   enabled?: boolean;
 };
 
@@ -162,18 +166,23 @@ export const action = async ({request}: ActionFunctionArgs): Promise<ActionData>
         });
       }
       case 'syncCustomers': {
-        const result = await backfillCustomerLoyaltyLevels(admin);
+        // One page per request (Cloud Run cuts requests at 60 s); the page
+        // sends the cursor and running totals back until nextCursor is null.
+        const after = formData.get('after');
+        const result = await backfillCustomerLoyaltyLevels(
+          admin,
+          typeof after === 'string' && after ? after : null,
+        );
+        const synced = Number(formData.get('synced') ?? 0) + result.syncedCustomers;
+        const failed = Number(formData.get('failed') ?? 0) + result.failedCustomers;
 
         return {
-          status: result.failedCustomers > 0 ? 'error' : 'success',
+          ...describeCustomerSync({synced, failed, nextCursor: result.nextCursor}),
           intent,
-          message:
-            `Customer loyalty levels were synced for ${result.syncedCustomers} customer(s).` +
-            (result.failedCustomers > 0
-              ? ` ${result.failedCustomers} couldn't be read and were left unchanged; run the sync again.`
-              : ''),
           syncedAt: new Date().toISOString(),
-          syncedCustomers: result.syncedCustomers,
+          syncedCustomers: synced,
+          failedCustomers: failed,
+          nextCursor: result.nextCursor,
         };
       }
       case 'saveEarnRules': {
@@ -329,6 +338,22 @@ export default function Index() {
     customerSyncFetcher.submit(formData, {method: 'POST'});
   };
 
+  // Keep going page by page until the engine says there's nothing left.
+  const customerSyncProgress = customerSyncFetcher.data;
+  useEffect(() => {
+    if (!customerSyncProgress?.nextCursor) return;
+    const formData = new FormData();
+    formData.set('intent', 'syncCustomers');
+    formData.set('after', customerSyncProgress.nextCursor);
+    formData.set('synced', String(customerSyncProgress.syncedCustomers ?? 0));
+    formData.set('failed', String(customerSyncProgress.failedCustomers ?? 0));
+    customerSyncFetcher.submit(formData, {method: 'POST'});
+    // Only a new page result should trigger the next request.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customerSyncProgress]);
+  const customerSyncRunning =
+    customerSyncFetcher.state !== 'idle' || Boolean(customerSyncProgress?.nextCursor);
+
   const saveEarnRules = () => {
     const formData = new FormData();
     formData.set('intent', 'saveEarnRules');
@@ -423,8 +448,16 @@ export default function Index() {
         storefrontWired={data.storefrontWired}
       />
 
+      {customerSyncRunning ? (
+        <s-banner tone="info" heading="Syncing customers">
+          {customerSyncProgress?.nextCursor
+            ? customerSyncProgress.message
+            : 'Starting… Keep this page open until it finishes.'}
+        </s-banner>
+      ) : null}
+
       <OperationsGrid
-        customerSyncLoading={customerSyncFetcher.state !== 'idle'}
+        customerSyncLoading={customerSyncRunning}
         initializeLoading={initializeFetcher.state !== 'idle'}
         initializeProgram={initializeProgram}
         syncLoading={syncFetcher.state !== 'idle'}
@@ -519,7 +552,8 @@ function useFetcherToast(
   },
 ) {
   useEffect(() => {
-    if (!fetcher.data?.message) {
+    // Pages of a running customer sync show in a banner, not a toast each.
+    if (!fetcher.data?.message || fetcher.data.nextCursor) {
       return;
     }
 
@@ -527,6 +561,7 @@ function useFetcherToast(
     shopify.toast.show(`${prefix}${fetcher.data.message}`);
   }, [
     fetcher.data?.message,
+    fetcher.data?.nextCursor,
     fetcher.data?.status,
     fetcher.data?.syncedAt,
     shopify,

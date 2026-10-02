@@ -49,6 +49,34 @@ describe('Sync customers (backfill)', () => {
     expect(shopify.writes()).toHaveLength(1);
     expect(field(shopify.writes()[0], 'loyalty_points_balance', 'gid://shopify/Customer/2')).toMatchObject({value: '80'});
   });
+
+  it('syncs one page per call and says where the next page starts, so no request runs into the timeout', async () => {
+    const shopify = fakeAdmin({
+      LoyaltyProgramSnapshot: snapshotResponse(),
+      LoyaltyCustomersPage: () => ({
+        customers: {nodes: [{id: 'gid://shopify/Customer/1'}], pageInfo: {hasNextPage: true, endCursor: 'cursor-2'}},
+      }),
+      LoyaltyCustomer: () => customerResponse(),
+      LoyaltyMetafieldsSet: okWrite,
+    });
+
+    const result = await backfillCustomerLoyaltyLevels(shopify.admin as never, 'cursor-1');
+
+    expect(shopify.calls.filter((c) => c.name === 'LoyaltyCustomersPage')).toHaveLength(1);
+    expect(shopify.calls.find((c) => c.name === 'LoyaltyCustomersPage')?.variables).toMatchObject({after: 'cursor-1'});
+    expect(result).toMatchObject({syncedCustomers: 1, failedCustomers: 0, nextCursor: 'cursor-2'});
+  });
+
+  it('returns no next page after the last one', async () => {
+    const shopify = fakeAdmin({
+      LoyaltyProgramSnapshot: snapshotResponse(),
+      LoyaltyCustomersPage: page(['gid://shopify/Customer/1']),
+      LoyaltyCustomer: () => customerResponse(),
+      LoyaltyMetafieldsSet: okWrite,
+    });
+
+    expect((await backfillCustomerLoyaltyLevels(shopify.admin as never)).nextCursor).toBeNull();
+  });
 });
 
 describe('Tier discounts (built-in, no Function)', () => {
