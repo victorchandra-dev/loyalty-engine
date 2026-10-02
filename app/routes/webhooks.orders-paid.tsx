@@ -37,16 +37,23 @@ export const action = async ({request}: ActionFunctionArgs) => {
   const customerAdminId = getOrdersPaidCustomerAdminId(order);
   const orderGid = getOrdersPaidOrderGid(order);
   if (!customerAdminId || !orderGid) {
+    console.log(`[loyalty] orders/paid ${orderGid ?? '?'}: skipped, no customer on the order (guest checkout)`);
     return new Response();
   }
 
   try {
     await runOnce(`orders/paid:${orderGid}`, async () => {
       const {enabled, program} = await loadProgramSnapshot(admin);
-      if (!enabled || !program) return;
+      if (!enabled || !program) {
+        console.log(`[loyalty] orders/paid ${orderGid}: skipped, program ${program ? 'paused' : 'not set up'}`);
+        return;
+      }
 
       const customer = await loadLoyaltyCustomer(admin, customerAdminId);
-      if (!customer) return;
+      if (!customer) {
+        console.log(`[loyalty] orders/paid ${orderGid}: skipped, customer ${customerAdminId} not found`);
+        return;
+      }
 
       const result = projectPaidOrder({
         customer,
@@ -90,6 +97,13 @@ export const action = async ({request}: ActionFunctionArgs) => {
         });
       }
       await recordPointsEvents(shop, history);
+      // One line per order, so "why didn't I get points?" is answerable from the logs.
+      console.log(
+        `[loyalty] orders/paid ${orderGid}: ${customer.id} ${customer.balance} -> ${result.balance}` +
+          ` (${result.earned.map((part) => `${part.type} +${part.points}`).join(', ') || 'nothing earned'};` +
+          ` already awarded: ${customer.awardedRules.join(', ') || 'none'})` +
+          (result.clearRedemption ? ', reward used' : ''),
+      );
     });
   } catch (error) {
     console.error(`[loyalty] orders/paid failed for ${orderGid}; Shopify will retry`);
