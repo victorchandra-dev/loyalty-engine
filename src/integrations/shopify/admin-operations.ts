@@ -353,3 +353,43 @@ export const METAOBJECT_DELETE_MUTATION = `#graphql
     }
   }
 ` as const;
+
+export const METAFIELD_DEFINITION_QUERY = `#graphql
+  query LoyaltyMetafieldDefinition($identifier: MetafieldDefinitionIdentifierInput!) {
+    metafieldDefinition(identifier: $identifier) {
+      id
+      access {
+        customerAccount
+        storefront
+      }
+    }
+  }
+` as const;
+
+export const METAFIELD_DEFINITION_CREATE_MUTATION = `#graphql
+  mutation LoyaltyMetafieldDefinitionCreate($definition: MetafieldDefinitionInput!) {
+    metafieldDefinitionCreate(definition: $definition) {
+      createdDefinition {
+        id
+      }
+      userErrors {
+        field
+        message
+      }
+    }
+  }
+` as const;
+
+export const METAFIELD_DEFINITION_UPDATE_MUTATION = `#graphql
+  mutation LoyaltyMetafieldDefinitionUpdate($definition: MetafieldDefinitionUpdateInput!) {
+    metafieldDefinitionUpdate(definition: $definition) {
+      updatedDefinition {
+        id
+      }
+      userErrors {
+        field
+        message
+      }
+    }
+  }
+` as const;

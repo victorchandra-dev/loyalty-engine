@@ -3,6 +3,9 @@ import {
   AUTOMATIC_DISCOUNT_DELETE_MUTATION,
   CUSTOMERS_PAGE_QUERY,
   METAFIELDS_DELETE_MUTATION,
+  METAFIELD_DEFINITION_CREATE_MUTATION,
+  METAFIELD_DEFINITION_QUERY,
+  METAFIELD_DEFINITION_UPDATE_MUTATION,
   METAOBJECT_DEFINITION_CREATE_MUTATION,
   METAOBJECT_DEFINITION_UPDATE_MUTATION,
   METAOBJECT_DELETE_MUTATION,
@@ -30,6 +33,7 @@ import {
 import {
   APP_METAFIELD_NAMESPACE,
   SHOP_LOYALTY_DISCOUNT_ID_KEY,
+  SHOP_LOYALTY_DISPLAY_SETTINGS_KEY,
   SHOP_LOYALTY_TIER_DISCOUNTS_KEY,
 } from './constants';
 import {adminGraphql, assertNoUserErrors} from './graphql.server';
@@ -420,7 +424,55 @@ function lookupDefinition(
   }
 }
 
+// The fields the storefront reads, and who may read them. These are declared
+// in shopify.app.loyaltyflow.toml too, but Shopify never created those
+// definitions (found on 2 Oct: none on either store), and without one the
+// Customer Account API returns null, so the storefront showed 0 points.
+const STOREFRONT_READABLE_DEFINITIONS = [
+  ...(['loyalty_state', 'loyalty_points_balance', 'loyalty_active_redemption'] as const).map((key) => ({
+    ownerType: 'CUSTOMER',
+    key,
+    type: key === 'loyalty_points_balance' ? 'number_integer' : 'json',
+    access: {admin: 'MERCHANT_READ', customerAccount: 'READ'},
+  })),
+  {
+    ownerType: 'SHOP',
+    key: SHOP_LOYALTY_DISPLAY_SETTINGS_KEY,
+    type: 'json',
+    access: {admin: 'MERCHANT_READ', storefront: 'PUBLIC_READ'},
+  },
+] as const;
+
+/**
+ * Create (or fix the access of) every field definition the storefront needs.
+ * ponytail: one lookup per field; four fields, run only on Initialize/save.
+ */
+export async function ensureStorefrontReadableDefinitions(admin: AdminApiContext) {
+  for (const {ownerType, key, type, access} of STOREFRONT_READABLE_DEFINITIONS) {
+    const identifier = {ownerType, namespace: '$app', key};
+    const {metafieldDefinition: existing} = await adminGraphql<{
+      metafieldDefinition: {id: string; access: {customerAccount: string; storefront: string}} | null;
+    }>(admin, METAFIELD_DEFINITION_QUERY, {identifier});
+
+    if (!existing) {
+      await mutate(admin, METAFIELD_DEFINITION_CREATE_MUTATION, {
+        definition: {...identifier, name: key, type, access},
+      }, 'metafieldDefinitionCreate', `Failed to create the ${key} field definition`);
+      continue;
+    }
+    const readable = 'customerAccount' in access
+      ? existing.access.customerAccount === access.customerAccount
+      : existing.access.storefront === access.storefront;
+    if (!readable) {
+      await mutate(admin, METAFIELD_DEFINITION_UPDATE_MUTATION, {
+        definition: {...identifier, access},
+      }, 'metafieldDefinitionUpdate', `Failed to update the ${key} field definition`);
+    }
+  }
+}
+
 async function ensureLoyaltyDefinitions(admin: AdminApiContext) {
+  await ensureStorefrontReadableDefinitions(admin);
   let configuration = await fetchLoyaltyProgramConfiguration(admin);
 
   for (const blueprint of LOYALTY_DEFINITION_BLUEPRINTS) {
