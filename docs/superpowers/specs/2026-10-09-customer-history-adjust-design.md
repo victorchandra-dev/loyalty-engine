@@ -32,12 +32,12 @@ in `src/domain/points-event-copy.ts`:
 
 | type | text | extra |
 |---|---|---|
-| `order` | Earned from order | link `shopify://admin/orders/<n>` when `orderId` is set (no lookup, so the 60-day `read_orders` limit doesn't apply) |
+| `order` | Earned from order | link `shopify://admin/orders/<n>` when `orderId` is set (any type; no lookup, so the 60-day `read_orders` limit doesn't apply) |
 | `signup` | Sign-up bonus | |
 | `referral` | Referral bonus | |
-| `refund` | Taken back after a refund | order link when set |
+| `refund` | Taken back after a refund | |
 | `redeem` | Redeemed for `<data.title>` (code `<data.code>`) | falls back to "Redeemed for a reward" |
-| `reward_used` | Used reward code `<data.code>` | order link when set |
+| `reward_used` | Used reward code `<data.code>` | |
 | `manual` | Awarded for `<data.title>` | falls back to "Awarded points" |
 | `adjust` | Adjusted by `<data.staffName>`: `<data.reason>` | |
 | unknown | Points changed | |
