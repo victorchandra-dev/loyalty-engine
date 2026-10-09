@@ -20,9 +20,10 @@ routing). A non-numeric ID returns 404.
   - Query: `PointsEvent` where `shop = session.shop` and
     `customerId = <gid>`, ordered `createdAt desc, id desc`, uses the
     `(shop, customerId, createdAt)` index.
-  - Pagination: `?after=<rowId>` with Prisma `cursor: {id}, skip: 1`; take 26
-    to know whether a "Next" link is needed. A cursor row from another shop or
-    customer returns the first page (the `where` filter still applies).
+  - Pagination: `?after=<createdAt ISO>_<id>` keyset paging (createdAt < x, or
+    createdAt = x and id < y); take 26 to know whether a "Next" link is needed;
+    a malformed cursor returns the first page; the shop and customer filter
+    always applies.
   - "Balance after" is each row's stored `balance`, not a running sum, so test
     customers with balances from before history read correctly.
   - Empty: "No points activity yet."

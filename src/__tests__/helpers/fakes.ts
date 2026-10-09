@@ -17,6 +17,7 @@ export function memoryPrisma() {
         events.push(...data);
         return {count: data.length};
       }),
+      findMany: vi.fn<(args: unknown) => Promise<Array<Record<string, unknown>>>>(async () => []),
     },
     processedWebhook: {
       create: vi.fn(async ({data}: {data: {key: string}}) => {
