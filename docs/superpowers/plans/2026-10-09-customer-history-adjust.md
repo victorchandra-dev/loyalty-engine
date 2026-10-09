@@ -4,7 +4,7 @@
 
 **Goal:** A customer page in the admin that shows the customer's points timeline from `PointsEvent`, plus a form where staff add or remove points with their name and a reason.
 
-**Architecture:** Pure logic goes in `src/domain/`: the plain wording per event type, and the balance and tier projection for an adjustment. Server code goes in `app/loyalty/`: paging the history query, and `adjustCustomerPoints`, which follows the same load → project → `saveLoyaltyCustomer` → `recordPointsEvents` path as rule awards. One new route, `app/routes/app.customers_.$id.tsx` (the trailing `_` keeps it from nesting inside the list route), renders Polaris web components.
+**Architecture:** Pure logic goes in `src/domain/`: the plain wording per event type, and the balance projection for an adjustment. Server code goes in `app/loyalty/`: paging the history query, and `adjustCustomerPoints`, which follows the same load → project → `saveLoyaltyCustomer` → `recordPointsEvents` path as rule awards. One new route, `app/routes/app.customers_.$id.tsx` (the trailing `_` keeps it from nesting inside the list route), renders Polaris web components.
 
 **Tech Stack:** React Router 7 (flat routes), Polaris web components (`s-*`), Prisma (Postgres), Shopify Admin GraphQL 2026-04, Vitest.
 
@@ -28,7 +28,7 @@
 | File | Change | Responsibility |
 |---|---|---|
 | `src/domain/points-event-copy.ts` | create | `describePointsEvent`: plain wording + order number for one history row |
-| `src/domain/customer-state.ts` | modify | add `projectAdjustment` (new balance, below-zero check, tier before/after) |
+| `src/domain/customer-state.ts` | modify | add `projectAdjustment` (new balance, below-zero check) |
 | `app/loyalty/points-history.server.ts` | modify | add `adjust` type, `historyPageArgs`, `listPointsEvents` |
 | `app/loyalty/customer-state.server.ts` | modify | `StaleBalanceError` in `saveLoyaltyCustomer`, `AdjustOutcome`, `adjustCustomerPoints` |
 | `src/integrations/shopify/admin-operations.ts` | modify | select `code` on `metafieldsSet.userErrors` |
@@ -176,18 +176,19 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ### Task 2: Adjustment projection
 
 **Files:**
-- Modify: `src/domain/customer-state.ts` (add after `getCurrentTier`, around line 72)
+- Modify: `src/domain/customer-state.ts` (add after `projectManualAward`)
 - Test: `src/__tests__/domain/adjustment.test.ts`
 
 **Interfaces:**
-- Consumes: `getCurrentTier(program, metrics)`, `LoyaltyCustomer`, `LoyaltyProgramConfig`, `LoyaltyTierConfig` (all existing).
+- Consumes: `LoyaltyCustomer` (existing).
 - Produces, for Task 4:
   ```ts
   export type AdjustmentProjection =
-    | {status: 'adjusted'; newBalance: number; tierBefore: LoyaltyTierConfig | null; tierAfter: LoyaltyTierConfig | null}
+    | {status: 'adjusted'; newBalance: number}
     | {status: 'below_zero'; balance: number};
-  export function projectAdjustment(args: {program: LoyaltyProgramConfig; customer: LoyaltyCustomer; delta: number}): AdjustmentProjection;
+  export function projectAdjustment(args: {customer: LoyaltyCustomer; delta: number}): AdjustmentProjection;
   ```
+- No tier logic: `normalizeTierEntries` forces every tier to `lifetime_spend`, and the tier segments filter on `amount_spent` (`src/domain/discount-engine.ts`), so points never move a tier.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -196,14 +197,6 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```ts
 import {describe, it, expect} from 'vitest';
 import {projectAdjustment, type LoyaltyCustomer} from '../../domain/customer-state.js';
-import type {LoyaltyProgramConfig, LoyaltyTierConfig} from '../../domain/program.js';
-
-const tier = (handle: string, name: string, metric: LoyaltyTierConfig['metric'], minimumValue: number, order: number): LoyaltyTierConfig =>
-  ({id: handle, handle, name, metric, minimumValue, order});
-
-const program = (tiers: LoyaltyTierConfig[]): LoyaltyProgramConfig => ({
-  currencyCode: 'USD', tiers, benefits: [], earnRules: [], redemptions: [],
-});
 
 const customer = (overrides: Partial<LoyaltyCustomer> = {}): LoyaltyCustomer => ({
   id: 'gid://shopify/Customer/1', balance: 300, balanceDigest: 'd', awardedRules: [], activeRedemption: null,
@@ -213,30 +206,18 @@ const customer = (overrides: Partial<LoyaltyCustomer> = {}): LoyaltyCustomer => 
 
 describe('projectAdjustment', () => {
   it('adds points', () => {
-    const r = projectAdjustment({program: program([]), customer: customer(), delta: 500});
-    expect(r).toMatchObject({status: 'adjusted', newBalance: 800});
+    const r = projectAdjustment({customer: customer(), delta: 500});
+    expect(r).toEqual({status: 'adjusted', newBalance: 800});
   });
 
   it('removes points down to exactly 0', () => {
-    const r = projectAdjustment({program: program([]), customer: customer(), delta: -300});
-    expect(r).toMatchObject({status: 'adjusted', newBalance: 0});
+    const r = projectAdjustment({customer: customer(), delta: -300});
+    expect(r).toEqual({status: 'adjusted', newBalance: 0});
   });
 
   it('refuses to go below 0 and reports the current balance', () => {
-    const r = projectAdjustment({program: program([]), customer: customer(), delta: -301});
+    const r = projectAdjustment({customer: customer(), delta: -301});
     expect(r).toEqual({status: 'below_zero', balance: 300});
-  });
-
-  it('detects a tier change when a tier is based on points', () => {
-    const tiers = [tier('silver', 'Silver', 'points_balance', 0, 1), tier('gold', 'Gold', 'points_balance', 1000, 2)];
-    const r = projectAdjustment({program: program(tiers), customer: customer({balance: 1200}), delta: -500});
-    expect(r).toMatchObject({status: 'adjusted', tierBefore: {handle: 'gold'}, tierAfter: {handle: 'silver'}});
-  });
-
-  it('keeps the tier when tiers are based on spend', () => {
-    const tiers = [tier('bronze', 'Bronze', 'lifetime_spend', 0, 1), tier('gold', 'Gold', 'lifetime_spend', 200, 2)];
-    const r = projectAdjustment({program: program(tiers), customer: customer(), delta: 5000});
-    expect(r).toMatchObject({status: 'adjusted', tierBefore: {handle: 'gold'}, tierAfter: {handle: 'gold'}});
   });
 });
 ```
@@ -248,48 +229,30 @@ Expected: FAIL with `projectAdjustment is not a function`.
 
 - [ ] **Step 3: Implement**
 
-In `src/domain/customer-state.ts`, directly after `getCurrentTier`:
+In `src/domain/customer-state.ts`, after `projectManualAward`:
 
 ```ts
 export type AdjustmentProjection =
-  | {
-      status: 'adjusted';
-      newBalance: number;
-      tierBefore: LoyaltyTierConfig | null;
-      tierAfter: LoyaltyTierConfig | null;
-    }
+  | {status: 'adjusted'; newBalance: number}
   | {status: 'below_zero'; balance: number};
 
 /**
  * A staff adjustment: the new balance, or a refusal when it would go below 0.
- * A tier can use points_balance as its metric, so the tier before and after
- * are returned for the confirmation message.
+ * ponytail: no tier check. Tiers are always lifetime_spend
+ * (normalizeTierEntries), so points never move a tier; add one if tiers ever
+ * use points_balance.
  */
 export function projectAdjustment({
-  program,
   customer,
   delta,
 }: {
-  program: LoyaltyProgramConfig;
   customer: LoyaltyCustomer;
   delta: number;
 }): AdjustmentProjection {
   const newBalance = customer.balance + delta;
-  if (newBalance < 0) {
-    return {status: 'below_zero', balance: customer.balance};
-  }
-  const metrics = (pointsBalance: number): CustomerMetricSnapshot => ({
-    lifetimeSpend: customer.lifetimeSpend,
-    paidOrderCount: customer.paidOrderCount,
-    pointsBalance,
-    currencyCode: customer.currencyCode,
-  });
-  return {
-    status: 'adjusted',
-    newBalance,
-    tierBefore: getCurrentTier(program, metrics(customer.balance)),
-    tierAfter: getCurrentTier(program, metrics(newBalance)),
-  };
+  return newBalance < 0
+    ? {status: 'below_zero', balance: customer.balance}
+    : {status: 'adjusted', newBalance};
 }
 ```
 
@@ -487,7 +450,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
   ```ts
   export class StaleBalanceError extends Error {}
   export type AdjustOutcome =
-    | {status: 'adjusted'; delta: number; balance: number; tierBefore: string | null; tierAfter: string | null}
+    | {status: 'adjusted'; delta: number; balance: number}
     | {status: 'invalid'}
     | {status: 'no_program'}
     | {status: 'not_found'}
@@ -499,7 +462,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
     delta: number; staffName: string; reason: string; staffUserId: string | null;
   }): Promise<AdjustOutcome>;
   ```
-  `tierBefore` and `tierAfter` are tier **names**, or `null` for no tier. The route builds the messages, so they stay translatable. `no_program` is only ever returned by the route.
+  The route builds the messages from these, so they stay translatable. `no_program` is only ever returned by the route.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -533,7 +496,7 @@ describe('adjustCustomerPoints', () => {
 
     const result = await adjustCustomerPoints({...base, admin: shopify.admin as never, delta: 500});
 
-    expect(result).toEqual({status: 'adjusted', delta: 500, balance: 750, tierBefore: null, tierAfter: null});
+    expect(result).toEqual({status: 'adjusted', delta: 500, balance: 750});
     expect(field(shopify.writes()[0], 'loyalty_points_balance')).toMatchObject({value: '750', compareDigest: 'digest-1'});
     expect(prisma.events).toEqual([{
       shop: 'test.myshopify.com', customerId: 'gid://shopify/Customer/1', type: 'adjust', points: 500, balance: 750,
@@ -658,7 +621,7 @@ In `app/loyalty/customer-state.server.ts`, add `projectAdjustment` to the existi
 
 ```ts
 export type AdjustOutcome =
-  | {status: 'adjusted'; delta: number; balance: number; tierBefore: string | null; tierAfter: string | null}
+  | {status: 'adjusted'; delta: number; balance: number}
   | {status: 'invalid'}
   | {status: 'no_program'}
   | {status: 'not_found'}
@@ -700,7 +663,7 @@ export async function adjustCustomerPoints({
     const customer = await loadLoyaltyCustomer(admin, customerAdminId);
     if (!customer) return {status: 'not_found'};
 
-    const projection = projectAdjustment({program, customer, delta});
+    const projection = projectAdjustment({customer, delta});
     if (projection.status === 'below_zero') return projection;
 
     await saveLoyaltyCustomer(admin, {program, customer, balance: projection.newBalance});
@@ -712,13 +675,7 @@ export async function adjustCustomerPoints({
       data: {reason: why, staffName: name, staffUserId},
     }]);
 
-    return {
-      status: 'adjusted',
-      delta,
-      balance: projection.newBalance,
-      tierBefore: projection.tierBefore?.name ?? null,
-      tierAfter: projection.tierAfter?.name ?? null,
-    };
+    return {status: 'adjusted', delta, balance: projection.newBalance};
   } catch (error) {
     if (error instanceof StaleBalanceError) return {status: 'conflict'};
     console.error(error);
@@ -805,13 +762,8 @@ const COPY = {
   older: 'Older',
   outcome(outcome: AdjustOutcome): string {
     switch (outcome.status) {
-      case 'adjusted': {
-        const verb = outcome.delta > 0 ? 'Added' : 'Removed';
-        const tier = outcome.tierBefore !== outcome.tierAfter
-          ? ` Tier changed from ${outcome.tierBefore ?? 'no tier'} to ${outcome.tierAfter ?? 'no tier'}.`
-          : '';
-        return `${verb} ${fmt(Math.abs(outcome.delta))} points. Balance: ${fmt(outcome.balance)}.${tier}`;
-      }
+      case 'adjusted':
+        return `${outcome.delta > 0 ? 'Added' : 'Removed'} ${fmt(Math.abs(outcome.delta))} points. Balance: ${fmt(outcome.balance)}.`;
       case 'below_zero':
         return `They have ${fmt(outcome.balance)} points. You can remove up to ${fmt(outcome.balance)}.`;
       case 'invalid':
@@ -1071,9 +1023,11 @@ with
 Run: `npm run typecheck && npm run lint && npm test`
 Expected: all three pass. If `typecheck` flags the `<s-text>` children typing or `ref` on `Form`, fix those to what the types allow. Don't add `any`.
 
-- [ ] **Step 4: Check it on the test store**
+- [ ] **Step 4: Manual check (runs in Task 6)**
 
-Run `shopify app dev` (it opens the test store). Then:
+Local dev can't run here: `.env` points `DATABASE_URL` at Postgres on `localhost`, and none is running. Cloud SQL is private-IP only. So this checklist runs in Task 6, on the **test store** after deploy. If a local Postgres is up (`pg_isready -h localhost` answers), you can run it now with `shopify app dev` and finish with `shopify app dev clean`.
+
+Checklist:
 
 1. Go to Customers and click a name. Check the page shows the name, email, points, tier and history table, or "No points activity yet."
 2. Add 10 points with your name and reason "plan test". The banner reads "Added 10 points. Balance: …", the form clears, and the top history row reads "Adjusted by <name>: plan test" with "+10".
@@ -1083,7 +1037,6 @@ Run `shopify app dev` (it opens the test store). Then:
 6. For a customer with more than 25 rows (the test customer from Friday, if it has that many), "Older" pages back and "Newest" returns.
 7. Click "View order" on an order row. It opens the order in Shopify admin.
 
-Then **run `shopify app dev clean`.** A dev preview overrides the released version on the test store.
 
 - [ ] **Step 5: Commit**
 
@@ -1104,11 +1057,15 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 Uploads to Cloud Storage hang from the office network, so deploy as the last few revisions did. Make a `git diff` patch from the source tarball already in `gs://run-sources-loyalty-engine-494212-asia-southeast1/manual/` to `HEAD`, then run a `--no-source` Cloud Build that applies it. The exact steps are in `docs/deploy-cloud-run.md` and the restart plan's Thursday night entry (revision `00006-m2j`). There's no migration, so start-up runs `prisma migrate deploy` with nothing to apply.
 
-- [ ] **Step 2: Smoke-check on the live store**
+- [ ] **Step 2: Run Task 5's checklist on the test store**
+
+The test store runs on the same Cloud Run service, but only the test store's data is touched. Fix anything that fails before going further.
+
+- [ ] **Step 3: Smoke-check on the live store**
 
 Open LoyaltyFlow → Customers → any customer. Check that the history shows real rows from Mon 5 Oct onwards. Don't adjust a real customer's points unless the owner asks.
 
-- [ ] **Step 3: Record it**
+- [ ] **Step 4: Record it**
 
 In `docs/superpowers/plans/2026-09-29-restart.md`, mark the piece A parts 1–2 line done, with the commit and the revision. Then commit:
 

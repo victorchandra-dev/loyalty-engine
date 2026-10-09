@@ -58,10 +58,9 @@ Server, `adjustCustomerPoints` in `app/loyalty/customer-state.server.ts`:
 2. `fetchLoyaltyProgramConfiguration`; program not initialised → the existing
    "Program not initialised" message.
 3. `loadLoyaltyCustomer`; not found → "Customer not found."
-4. `projectAdjustment({program, customer, delta})` in
+4. `projectAdjustment({customer, delta})` in
    `src/domain/customer-state.ts` (pure): returns the new balance, or a
-   rejection when the result would be below 0, plus the tier handle before and
-   after (via `getCurrentTier` with the balance swapped in).
+   rejection when the result would be below 0.
 5. `saveLoyaltyCustomer` (compareDigest protection; `awardedRules` unchanged).
 6. `recordPointsEvents` with `type: 'adjust'`, `points: delta`,
    `balance: newBalance`, `data: {reason, staffName, staffUserId}`, where
@@ -77,14 +76,14 @@ Messages:
 |---|---|
 | added | Added 500 points. Balance: 1,249. |
 | removed | Removed 200 points. Balance: 549. |
-| tier changed | …appended: Tier changed from Gold to Silver. (tier names, "no tier" when null) |
 | below zero | They have 300 points. You can remove up to 300. |
 | compareDigest conflict | Their points changed while you were editing. Reload and try again. |
 | other failure | Could not change points right now. Please try again. (error logged with `console.error`) |
 
-A tier can use `points_balance` as its metric, so an adjustment can move a
-customer between tiers and change their checkout discount. The success message
-says so; there is no extra confirm step.
+An adjustment never changes a tier or checkout discount:
+`normalizeTierEntries` forces every tier to `lifetime_spend`, and the tier
+segments filter on `amount_spent`. So there is no tier message (checked while
+planning, 2026-10-09).
 
 An active reward code is not touched by an adjustment.
 
@@ -92,9 +91,7 @@ An active reward code is not touched by an adjustment.
 
 Vitest, in `src/__tests__/domain/` next to the existing 106:
 
-- `projectAdjustment`: add, remove, remove to exactly 0, below 0 rejected,
-  tier change detected for a `points_balance` tier, no tier change for a
-  `lifetime_spend` tier.
+- `projectAdjustment`: add, remove, remove to exactly 0, below 0 rejected.
 - `describePointsEvent`: every type, including missing `data` fields and an
   unknown type.
 
