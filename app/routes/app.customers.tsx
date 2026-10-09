@@ -248,7 +248,9 @@ export default function CustomersRoute() {
                 <s-table-row key={row.id}>
                   <s-table-cell>
                     <s-stack direction="block" gap="small">
-                      <s-text type="strong">{row.name}</s-text>
+                      <Link to={`/app/customers/${row.id.split('/').pop()}`}>
+                        <s-text type="strong">{row.name}</s-text>
+                      </Link>
                       <s-text>{row.email}</s-text>
                     </s-stack>
                   </s-table-cell>
