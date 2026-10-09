@@ -7,7 +7,7 @@ Later slices: English + Indonesian (part 4), then the results page with shadcn
 
 ## 1. Customer page: `/app/customers/<numericId>`
 
-Route `app/routes/app.customers.$id.tsx`. The path carries the numeric ID; the
+Route `app/routes/app.customers_.$id.tsx`. The path carries the numeric ID; the
 loader rebuilds `gid://shopify/Customer/<id>` (a GID in a path segment breaks
 routing). A non-numeric ID returns 404.
 

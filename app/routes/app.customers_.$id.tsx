@@ -1,7 +1,8 @@
 import {useEffect, useRef, useState, type FormEvent} from 'react';
 import type {ActionFunctionArgs, HeadersFunction, LoaderFunctionArgs} from 'react-router';
-import {Form, Link, useActionData, useLoaderData} from 'react-router';
+import {Form, Link, useActionData, useLoaderData, useNavigation} from 'react-router';
 import {boundary} from '@shopify/shopify-app-react-router/server';
+import {MAX_ADJUST_POINTS} from '../../src/domain/customer-state.js';
 import {describePointsEvent} from '../../src/domain/points-event-copy.js';
 import {adjustCustomerPoints, type AdjustOutcome} from '../loyalty/customer-state.server';
 import {adminGraphql} from '../loyalty/graphql.server';
@@ -42,7 +43,9 @@ const COPY = {
       case 'below_zero':
         return `They have ${fmt(outcome.balance)} points. You can remove up to ${fmt(outcome.balance)}.`;
       case 'invalid':
-        return 'Enter a whole number of points (1 or more), your name and a reason.';
+        return `Enter a whole number of points from 1 to ${fmt(MAX_ADJUST_POINTS)}, your name and a reason.`;
+      case 'too_large':
+        return 'That would take their balance above what the points history can record. Use a smaller number.';
       case 'no_program':
         return 'Initialize the program first.';
       case 'not_found':
@@ -144,6 +147,7 @@ export const action = async ({request, params}: ActionFunctionArgs) => {
   if (!program) return {outcome: {status: 'no_program'} as AdjustOutcome};
 
   const points = Number(form.get('points'));
+  if (!(points >= 1)) return {outcome: {status: 'invalid'} as AdjustOutcome};
   const outcome = await adjustCustomerPoints({
     admin,
     shop: session.shop,
@@ -163,6 +167,8 @@ export default function CustomerRoute() {
   const outcome = actionData?.outcome;
   const formRef = useRef<HTMLFormElement>(null);
   const [savedName, setSavedName] = useState('');
+  const navigation = useNavigation();
+  const busy = navigation.state !== 'idle';
 
   useEffect(() => {
     try {
@@ -172,12 +178,16 @@ export default function CustomerRoute() {
     }
   }, []);
 
-  // Clear the form after a successful change so a second click can't repeat it.
+  // Clear the submitted values after a successful change.
   useEffect(() => {
     if (actionData?.outcome.status === 'adjusted') formRef.current?.reset();
   }, [actionData]);
 
   const rememberName = (event: FormEvent<HTMLFormElement>) => {
+    if (busy) {
+      event.preventDefault();
+      return;
+    }
     const name = new FormData(event.currentTarget).get('staffName');
     if (typeof name !== 'string' || !name.trim()) return;
     try {
@@ -214,11 +224,11 @@ export default function CustomerRoute() {
                 <s-option value="add">{COPY.add}</s-option>
                 <s-option value="remove">{COPY.remove}</s-option>
               </s-select>
-              <s-number-field label={COPY.amount} name="points" min={1} step={1} inputMode="numeric" required></s-number-field>
+              <s-number-field label={COPY.amount} name="points" min={1} max={MAX_ADJUST_POINTS} step={1} inputMode="numeric" required></s-number-field>
             </s-grid>
             <s-text-field key={savedName} label={COPY.staffName} name="staffName" defaultValue={savedName} maxLength={60} required></s-text-field>
             <s-text-area label={COPY.reason} name="reason" rows={2} maxLength={200} required></s-text-area>
-            <s-button variant="primary" type="submit">{COPY.save}</s-button>
+            <s-button variant="primary" type="submit" loading={busy} disabled={busy}>{COPY.save}</s-button>
           </s-stack>
         </Form>
       </s-section>

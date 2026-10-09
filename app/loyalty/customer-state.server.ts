@@ -2,6 +2,7 @@ import type {AdminApiContext} from '@shopify/shopify-app-react-router/server';
 import {METAFIELDS_SET_MUTATION} from '../../src/integrations/shopify/admin-operations.js';
 import type {LoyaltyProgramConfig} from '../../src/domain/program.js';
 import {
+  MAX_ADJUST_POINTS,
   buildCustomerLoyaltyState,
   projectAdjustment,
   projectManualAward,
@@ -626,11 +627,14 @@ export async function awardEarnRuleToCustomer({
 export type AdjustOutcome =
   | {status: 'adjusted'; delta: number; balance: number}
   | {status: 'invalid'}
+  | {status: 'too_large'}
   | {status: 'no_program'}
   | {status: 'not_found'}
   | {status: 'below_zero'; balance: number}
   | {status: 'conflict'}
   | {status: 'failed'};
+
+const MAX_BALANCE = 2_147_483_647; // PointsEvent.points/balance are Postgres integer
 
 /**
  * Staff add or remove points by hand from the customer page. Recorded as an
@@ -658,7 +662,7 @@ export async function adjustCustomerPoints({
 }): Promise<AdjustOutcome> {
   const name = staffName.trim();
   const why = reason.trim();
-  if (!Number.isInteger(delta) || delta === 0 || !name || name.length > 60 || !why || why.length > 200) {
+  if (!Number.isSafeInteger(delta) || delta === 0 || Math.abs(delta) > MAX_ADJUST_POINTS || !name || name.length > 60 || !why || why.length > 200) {
     return {status: 'invalid'};
   }
 
@@ -668,6 +672,7 @@ export async function adjustCustomerPoints({
 
     const projection = projectAdjustment({customer, delta});
     if (projection.status === 'below_zero') return projection;
+    if (projection.newBalance > MAX_BALANCE) return {status: 'too_large'};
 
     await saveLoyaltyCustomer(admin, {program, customer, balance: projection.newBalance});
     await recordPointsEvents(shop, [{

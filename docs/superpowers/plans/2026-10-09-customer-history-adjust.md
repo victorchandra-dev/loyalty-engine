@@ -1061,6 +1061,16 @@ Uploads to Cloud Storage hang from the office network, so deploy as the last few
 
 The test store runs on the same Cloud Run service, but only the test store's data is touched. Fix anything that fails before going further.
 
+Also check:
+
+- Double-click Save: only one new history row appears.
+- Enter 1000001 points: it is rejected.
+- The form clears after a success.
+- `/app/customers/abc` shows a 404.
+- A staff name containing `<script>` renders as plain text.
+- The stored `adjust` row has a non-null `staffUserId`.
+- A paid order and a refund on the test store still update points (webhooks unaffected).
+
 - [ ] **Step 3: Smoke-check on the live store**
 
 Open LoyaltyFlow → Customers → any customer. Check that the history shows real rows from Mon 5 Oct onwards. Don't adjust a real customer's points unless the owner asks.

@@ -176,6 +176,9 @@ export function projectManualAward({
   };
 }
 
+/** Largest single staff adjustment. Lives here (not in the .server file) so the page can show it. */
+export const MAX_ADJUST_POINTS = 1_000_000;
+
 export type AdjustmentProjection =
   | {status: 'adjusted'; newBalance: number}
   | {status: 'below_zero'; balance: number};

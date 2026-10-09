@@ -33,6 +33,20 @@ describe('adjustCustomerPoints', () => {
     }]);
   });
 
+  it('accepts exactly the maximum adjustment', async () => {
+    const shopify = fakeAdmin({LoyaltyCustomer: () => customerResponse({balance: 0}), LoyaltyMetafieldsSet: okWrite});
+    const result = await adjustCustomerPoints({...base, admin: shopify.admin as never, delta: 1_000_000});
+    expect(result).toEqual({status: 'adjusted', delta: 1_000_000, balance: 1_000_000});
+  });
+
+  it('refuses a balance the points history cannot record and writes nothing', async () => {
+    const shopify = fakeAdmin({LoyaltyCustomer: () => customerResponse({balance: 2_147_000_000})});
+    const result = await adjustCustomerPoints({...base, admin: shopify.admin as never, delta: 1_000_000});
+    expect(result).toEqual({status: 'too_large'});
+    expect(shopify.writes()).toEqual([]);
+    expect(prisma.events).toEqual([]);
+  });
+
   it('refuses to remove more than the balance and writes nothing', async () => {
     const shopify = fakeAdmin({LoyaltyCustomer: () => customerResponse({balance: 300})});
 
@@ -46,6 +60,8 @@ describe('adjustCustomerPoints', () => {
   it.each([
     ['zero points', {delta: 0}],
     ['a fraction', {delta: 1.5}],
+    ['too many points', {delta: 1_000_001}],
+    ['too many points removed', {delta: -1_000_001}],
     ['no number', {delta: Number.NaN}],
     ['a blank name', {staffName: '  '}],
     ['a blank reason', {reason: ''}],
