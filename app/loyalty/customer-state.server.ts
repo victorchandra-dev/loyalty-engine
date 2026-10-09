@@ -3,6 +3,7 @@ import {METAFIELDS_SET_MUTATION} from '../../src/integrations/shopify/admin-oper
 import type {LoyaltyProgramConfig} from '../../src/domain/program.js';
 import {
   buildCustomerLoyaltyState,
+  projectAdjustment,
   projectManualAward,
   type ActiveRedemption,
   type LoyaltyCustomer,
@@ -25,6 +26,7 @@ type MetafieldsSetMutationData = {
     userErrors: Array<{
       field?: Array<string | number> | null;
       message: string;
+      code?: string | null;
     }>;
   };
 };
@@ -182,6 +184,13 @@ export async function fetchOrderCustomerId(
 // Writing: every change to a customer's points goes through one call
 // ----------------------------------------------------------------------------
 
+/** Shopify rejected a write because the balance changed after it was read. */
+export class StaleBalanceError extends Error {
+  constructor() {
+    super('Customer points changed since they were read');
+  }
+}
+
 /**
  * Write a customer's new points in one atomic metafieldsSet: their balance and
  * derived state, plus optionally their active reward, the referral-paid flag
@@ -253,6 +262,9 @@ export async function saveLoyaltyCustomer(
     METAFIELDS_SET_MUTATION,
     {metafields},
   );
+  if (result.metafieldsSet.userErrors.some((error) => error.code === 'STALE_OBJECT')) {
+    throw new StaleBalanceError();
+  }
   assertNoUserErrors(
     result.metafieldsSet.userErrors,
     'Failed to save customer loyalty points',
@@ -608,5 +620,68 @@ export async function awardEarnRuleToCustomer({
       status: 'rejected',
       message: 'Could not award points right now. Please try again.',
     };
+  }
+}
+
+export type AdjustOutcome =
+  | {status: 'adjusted'; delta: number; balance: number}
+  | {status: 'invalid'}
+  | {status: 'no_program'}
+  | {status: 'not_found'}
+  | {status: 'below_zero'; balance: number}
+  | {status: 'conflict'}
+  | {status: 'failed'};
+
+/**
+ * Staff add or remove points by hand from the customer page. Recorded as an
+ * `adjust` row (not `manual`, which is rule awards) so piece B never emails a
+ * customer about a correction.
+ */
+export async function adjustCustomerPoints({
+  admin,
+  shop,
+  customerAdminId,
+  program,
+  delta,
+  staffName,
+  reason,
+  staffUserId,
+}: {
+  admin: AdminApiContext;
+  shop: string;
+  customerAdminId: string;
+  program: LoyaltyProgramConfig;
+  delta: number;
+  staffName: string;
+  reason: string;
+  staffUserId: string | null;
+}): Promise<AdjustOutcome> {
+  const name = staffName.trim();
+  const why = reason.trim();
+  if (!Number.isInteger(delta) || delta === 0 || !name || name.length > 60 || !why || why.length > 200) {
+    return {status: 'invalid'};
+  }
+
+  try {
+    const customer = await loadLoyaltyCustomer(admin, customerAdminId);
+    if (!customer) return {status: 'not_found'};
+
+    const projection = projectAdjustment({customer, delta});
+    if (projection.status === 'below_zero') return projection;
+
+    await saveLoyaltyCustomer(admin, {program, customer, balance: projection.newBalance});
+    await recordPointsEvents(shop, [{
+      customerId: customer.id,
+      type: 'adjust',
+      points: delta,
+      balance: projection.newBalance,
+      data: {reason: why, staffName: name, staffUserId},
+    }]);
+
+    return {status: 'adjusted', delta, balance: projection.newBalance};
+  } catch (error) {
+    if (error instanceof StaleBalanceError) return {status: 'conflict'};
+    console.error(error);
+    return {status: 'failed'};
   }
 }

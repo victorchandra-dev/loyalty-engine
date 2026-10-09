@@ -23,6 +23,7 @@ export const METAFIELDS_SET_MUTATION = `#graphql
       userErrors {
         field
         message
+        code
       }
     }
   }
