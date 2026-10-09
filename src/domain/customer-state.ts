@@ -176,6 +176,29 @@ export function projectManualAward({
   };
 }
 
+export type AdjustmentProjection =
+  | {status: 'adjusted'; newBalance: number}
+  | {status: 'below_zero'; balance: number};
+
+/**
+ * A staff adjustment: the new balance, or a refusal when it would go below 0.
+ * ponytail: no tier check. Tiers are always lifetime_spend
+ * (normalizeTierEntries), so points never move a tier; add one if tiers ever
+ * use points_balance.
+ */
+export function projectAdjustment({
+  customer,
+  delta,
+}: {
+  customer: LoyaltyCustomer;
+  delta: number;
+}): AdjustmentProjection {
+  const newBalance = customer.balance + delta;
+  return newBalance < 0
+    ? {status: 'below_zero', balance: customer.balance}
+    : {status: 'adjusted', newBalance};
+}
+
 /**
  * How long a redeemed reward stays usable at checkout (owner's call, 1 Oct
  * 2026: 30 days). The storefront shows and hides the reward by this expiry,
