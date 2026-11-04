@@ -471,7 +471,7 @@ export async function ensureStorefrontReadableDefinitions(admin: AdminApiContext
   }
 }
 
-async function ensureLoyaltyDefinitions(admin: AdminApiContext) {
+export async function ensureLoyaltyDefinitions(admin: AdminApiContext) {
   await ensureStorefrontReadableDefinitions(admin);
   let configuration = await fetchLoyaltyProgramConfiguration(admin);
 

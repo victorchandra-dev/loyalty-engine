@@ -14,6 +14,8 @@ import {
 import {adminGraphql, assertNoUserErrors} from './graphql.server';
 import type {LoyaltyProgramConfiguration} from './program.server';
 import {fetchLoyaltyProgramConfiguration, syncShopProgramSnapshot} from './program.server';
+// Cyclic with admin.server (which seeds from this file); safe, both only call each other inside functions.
+import {ensureLoyaltyDefinitions} from './admin.server';
 
 /**
  * Editor + persistence helpers for earn rules and redemptions, mirroring the
@@ -213,7 +215,8 @@ export async function saveEarnRuleConfiguration({
   earnRules: LoyaltyEarnRuleInput[];
 }) {
   const sanitized = sanitizeEarnRuleInputs(earnRules);
-  const configuration = await fetchLoyaltyProgramConfiguration(admin);
+  // Older stores may lack newer definition fields; add them before writing.
+  const configuration = await ensureLoyaltyDefinitions(admin);
 
   await applyEarnRuleEntries(admin, configuration, sanitized);
   await syncShopProgramSnapshot(admin);
@@ -233,7 +236,8 @@ export async function saveRedemptionConfiguration({
   redemptions: LoyaltyRedemptionInput[];
 }) {
   const sanitized = sanitizeRedemptionInputs(redemptions);
-  const configuration = await fetchLoyaltyProgramConfiguration(admin);
+  // Older stores may lack newer definition fields; add them before writing.
+  const configuration = await ensureLoyaltyDefinitions(admin);
 
   await applyRedemptionEntries(admin, configuration, sanitized);
   await syncShopProgramSnapshot(admin);
