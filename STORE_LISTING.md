@@ -4,7 +4,7 @@ Track readiness for Partner Dashboard submission. Check items off as completed.
 
 ## App configuration (`shopify.app.toml`)
 
-- [x] `application_url` set (`https://amadaflow-loyalty.fly.dev`)
+- [x] `application_url` set (`https://amadaflow-loyalty-201907146826.asia-southeast1.run.app`)
 - [x] `auth.redirect_urls` populated
 - [x] Business webhooks declared (`app/uninstalled`, `app/scopes_update`,
       `metaobjects/*`, `orders/paid`, `refunds/create`)
@@ -32,7 +32,7 @@ Track readiness for Partner Dashboard submission. Check items off as completed.
       (`src/domain/billing.ts`); enforced in `app/routes/app._index.tsx` action.
 - [ ] **Partner Dashboard: create the Free and Pro plans** (Pricing → Managed
       Pricing). Pro = recurring price + 14-day trial.
-- [ ] Set `SHOPIFY_APP_HANDLE` in Fly secrets to match the app handle.
+- [ ] Set `SHOPIFY_APP_HANDLE` in Cloud Run secrets (Secret Manager) to match the app handle.
 - [ ] Verify on a development store: no-subscription = capped at 3 + upgrade CTA;
       subscribing to Pro (trial) lifts the cap.
 
@@ -52,7 +52,7 @@ Track readiness for Partner Dashboard submission. Check items off as completed.
 - [ ] OAuth + embedded App Bridge session verified end-to-end
 - [ ] Customer-account UI extensions render and read `loyalty_state`
 - [ ] Discount function deploys and applies redemptions at checkout
-- [ ] Deployed to Fly.io with all secrets set (`SHOPIFY_API_SECRET`,
+- [ ] Deployed to Cloud Run with all secrets set (`SHOPIFY_API_SECRET`,
       `LOYALTY_ENGINE_SHARED_SECRET`, `LOYALTY_CUSTOMER_TOKEN_SECRET`,
       `DATABASE_URL`, optional `SENTRY_DSN`)
 - [ ] Prisma migrations applied in production

@@ -216,7 +216,7 @@ export default function SettingsRoute() {
             <s-text type="strong">LOYALTY_ENGINE_SHARED_SECRET</s-text> —
             shared secret. Set the matching{' '}
             <s-text type="strong">LOYALTY_ENGINE_SHARED_SECRET</s-text> env
-            var on this app&apos;s host (Fly.io / wherever it is deployed) so both
+            var on this app&apos;s host (Cloud Run / wherever it is deployed) so both
             sides can authenticate each other.
           </s-list-item>
         </s-unordered-list>

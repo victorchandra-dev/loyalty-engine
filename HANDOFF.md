@@ -1,162 +1,62 @@
-# Loyalty engine — handover for Claude Code
+# Handoff
 
-## Current state
+State as of 4 Nov 2026. Live revision: `amadaflow-loyalty-00015-q29`. Overview and commands are in [README.md](README.md). History and decisions: `docs/superpowers/plans/2026-09-29-restart.md` and the other plans and specs under `docs/superpowers/`.
 
-The engine is production-ready and targeting the Shopify App Store (demo vehicle for Amada Flow). All core features are implemented and type-checked. Two deploy steps are pending (see below).
+## Where things live
 
----
+- Private Shopify app on Custom distribution, for the Amada Flow store only. Config: `shopify.app.loyaltyflow.toml`.
+- Hosting is all GCP: Cloud Run, Cloud SQL (private IP only), Secret Manager, Cloud Logging and Error Reporting. Errors come from `console.error`. There is no Sentry. See [docs/deploy-cloud-run.md](docs/deploy-cloud-run.md).
+- Points and balances are Shopify customer metafields. Writes use `compareDigest` (`saveLoyaltyCustomer`), so a stale write fails instead of overwriting.
+- Postgres holds only: `Session`, `ProcessedWebhook` (once-only webhook keys) and `PointsEvent` (points history). See `prisma/schema.prisma`.
+- The program (tiers, earn rules, rewards) is stored as Shopify metaobjects. A snapshot of it is kept in an app metafield for the checkout extension and the engine.
 
-## Architecture
+## How the flows work
 
-The storefront and engine talk via a shared-secret HTTPS proxy:
+**Order paid** (`webhooks.orders-paid.tsx`): run once per order (`runOnce`). Adds per-$ order points, flat order points, the signup bonus on the first order, and the referral bonus for both sides. Clears the reward used at checkout. Guest orders are skipped. Any failure returns 500 so Shopify retries.
 
-1. Customer clicks Redeem on the Hydrogen rewards page.
-2. Hydrogen route `app/routes/api.loyalty.redeem.tsx`:
-   - Verifies `context.customerAccount.isLoggedIn()`.
-   - Queries `CustomerIdQuery` to get the customer's admin GID server-side.
-   - POSTs to `${env.LOYALTY_ENGINE_URL}/api/redeem` with `X-Loyalty-Engine-Secret` and `X-Shopify-Shop-Domain` headers.
-3. Engine `app/routes/api.redeem.tsx`:
-   - Constant-time compares the shared secret (`constantTimeEquals`).
-   - Calls `applyRedemptionForCustomer` which validates balance, debits, and writes `loyalty_active_redemption` metafield.
-4. Discount function reads `loyalty_active_redemption` at every cart eval, emits tier + redemption discount candidates.
+**Refund** (`webhooks.orders-refunded.tsx`, topic `refunds/create`): run once per refund. Takes back only per-$ order points. Flat order points stay. Pending payment-app refunds count. A refund with no money is ignored.
 
-Points awarding: `webhooks.orders-paid.tsx` → `fetchCustomerPointsState` → `computeOrderPoints` / `getOneShotEarnPoints` → `syncCustomerLoyaltyState`. Idempotency guard: `currentState.lastOrderId === orderGid` short-circuits re-processing on Shopify retries.
+**Redeem** (`api.redeem.tsx`): checks the customer token, creates a single-use discount code for that customer (`createRewardCode`), then takes the points. If saving the balance fails (for example a double click changed it), the code is deleted again (`deleteRewardCode`), so a reward is never free and never paid twice. One active reward at a time; it expires after 30 days.
 
-Refund rollback: `webhooks.orders-refunded.tsx` handles `refunds/create`. Computes debit via `computeRefundPointsDebit` (mirrors `computeOrderPoints`, only `order` earn rules reversed), floors balance at 0.
+**Tier discounts** (`syncTierDiscounts` in `admin.server.ts`): one built-in automatic discount per tier, limited to that tier's customer segment. Re-synced on Sync program, Initialize, tier saves and Activate/Pause (pausing removes them). Tiers use Shopify's lifetime spend.
 
----
+**Referral:** the storefront saves `?ref=` in an `adf_ref` cookie and calls `/api/attribute-referral` on a signed-in page load. The engine refuses customers who already have orders. Points are paid when the new customer's first order is paid. Checked end to end on the live store on 4 Nov.
 
-## File map
+**GDPR:** customer redact clears the loyalty metafields and deletes that customer's `PointsEvent` rows. Shop redact deletes all of the shop's `PointsEvent` rows. App uninstall deletes the sessions.
 
-### Engine (`apps/loyalty-engine/`)
+**Storefront calls:** `/api/customer-state`, `/api/redeem`, `/api/attribute-referral`. Headers: `X-Loyalty-Engine-Secret`, `X-Shopify-Shop-Domain`, and `X-Loyalty-Customer-Token` (an HMAC bound to one customer). See `app/loyalty/engine-auth.server.ts`. The storefront deploys from the `dev` branch of its repo.
 
-**Routes — admin UI**
-- `app/routes/app.tsx` — top nav (Home, Customers, Reward programs, Settings)
-- `app/routes/app._index.tsx` — home dashboard with inline on/off toggle
-- `app/routes/app.customers.tsx` — paginated customer table + referral reconciliation action
-- `app/routes/app.settings.tsx` — master Active/Paused toggle
-- `app/routes/app.reward-programs.tsx` — re-exports `app._index.tsx` (split deferred)
+## Important files
 
-**Routes — API**
-- `app/routes/api.redeem.tsx` — shared-secret + admin auth; calls `applyRedemptionForCustomer`
-- `app/routes/api.attribute-referral.tsx` — shared-secret + admin auth; writes referral attribution metafield
-- `app/routes/health.tsx` — `GET /health` pings DB, returns 200/503
+| File | What |
+|---|---|
+| `app/loyalty/customer-state.server.ts` | load and save customers, reward codes, referral attribution, manual adjust |
+| `app/loyalty/admin.server.ts` | metaobject setup, tier editor, tier discounts |
+| `app/loyalty/program.server.ts` | program snapshot sync |
+| `app/loyalty/run-once.server.ts` | once-only webhook guard |
+| `app/loyalty/points-history.server.ts` | `PointsEvent` write and read |
+| `app/loyalty/engine-auth.server.ts` | storefront auth and customer tokens |
+| `src/domain/customer-state.ts` | pure rules: paid order, redemption, refund, referral |
+| `app/routes/app._index.tsx` | program editor |
+| `app/routes/app.customers_.$id.tsx` | customer page: history and adjust |
+| `docs/earn-rules-redemptions.md` | earn rules and redemptions notes |
 
-**Routes — webhooks**
-- `app/routes/webhooks.orders-paid.tsx` — awards points on paid orders (idempotent)
-- `app/routes/webhooks.orders-refunded.tsx` — debits points on refund
-- `app/routes/webhooks.metaobjects.tsx` — syncs program snapshot when config metaobject changes
-- `app/routes/webhooks.app.uninstalled.tsx` — clears Prisma sessions on uninstall
-- `app/routes/webhooks.customers.data-request.tsx` — GDPR: logs request (data in Shopify metafields)
-- `app/routes/webhooks.customers.redact.tsx` — GDPR: deletes all 5 customer loyalty metafields
-- `app/routes/webhooks.shop.redact.tsx` — GDPR: deletes Prisma sessions for the shop
+## Operations
 
-**Server logic**
-- `app/loyalty/customer-state.server.ts` — `fetchCustomerPointsState`, `syncCustomerLoyaltyState`, `applyRedemptionForCustomer`, `clearRedemptionForCustomer`, `reconcilePendingReferrals`
-- `app/loyalty/program.server.ts` — fetches all metaobject types; snapshot includes `enabled` flag
-- `app/loyalty/settings.server.ts` — read/write program-enabled flag
-- `app/loyalty/admin.server.ts` — tier save flow + customer-points backfill
-- `app/loyalty/earn-rules-redemptions-admin.server.ts` — earn rule + redemption save
-- `app/loyalty/graphql.server.ts` — typed `adminGraphql` wrapper
-- `app/loyalty/constants.ts` — metaobject types, action codes, reward types
+**Deploy:** `gcloud run deploy amadaflow-loyalty --source . --project loyalty-engine-494212 --region asia-southeast1`. Traffic follows the latest revision. Migrations run on container start.
 
-**Domain / shared**
-- `src/domain/program.ts` — `LoyaltyTierConfig`, `LoyaltyEarnRuleConfig`, `computeOrderPoints`, `getOneShotEarnPoints`
-- `src/domain/customer-state.ts` — `buildCustomerLoyaltyState`, `getQualifiedTiers`; includes `lastOrderId`
-- `src/webhooks/orders-paid.ts` — payload types + helpers including `getOrdersPaidOrderGid`
-- `src/webhooks/orders-refunded.ts` — `getOrdersRefundedAmount`, `computeRefundPointsDebit`
-- `src/webhooks/metaobjects.ts` — `isLoyaltyConfigMetaobject`
+**Warning:** `gcloud run services update-traffic --to-revisions X=100` pins traffic to revision X. Later deploys then get 0% until you run `gcloud run services update-traffic amadaflow-loyalty --to-latest` (same project and region flags). This happened on 4 Nov.
 
-**Tests**
-- `src/__tests__/domain/program.test.ts` — `computeOrderPoints`, `getOneShotEarnPoints`
-- `src/__tests__/domain/customer-state.test.ts` — `buildCustomerLoyaltyState`, `getQualifiedTiers`
-- `src/__tests__/webhooks/orders-paid.test.ts` — payload helpers
-- `src/__tests__/webhooks/orders-refunded.test.ts` — `getOrdersRefundedAmount`, `computeRefundPointsDebit`
+**Logs:** Cloud Logging for the service; Error Reporting for errors. Webhook lines start with `[loyalty]`.
 
-**Config**
-- `shopify.app.toml` — webhook subscriptions: `orders/paid`, `app/uninstalled`, `metaobjects/update`, `metaobjects/delete`, `refunds/create`
-- `fly.toml` — `min_machines_running = 1`; `/health` check every 30s
-- `vitest.config.ts` — `environment: 'node'`, runs `src/__tests__/**/*.test.ts`
-- `.env.example` — all 8 required env vars documented
+**Rollback:** list revisions with `gcloud run revisions list`, then send traffic to the good one. When fixed, deploy and run `--to-latest` to unpin. Migrations are not undone by a rollback, so keep them additive.
 
-### Storefront (Hydrogen — repo root)
-- `app/components/LoyaltyFloatingWidget.tsx` — bottom-sheet rewards launcher
-- `app/routes/account.loyalty.tsx` — full rewards page
-- `app/routes/api.loyalty.redeem.tsx` — proxy to engine
-- `app/routes/api.ai-preview.tsx` — image gen, tier-locked
-- `app/lib/loyalty.ts` + `app/lib/loyalty.server.ts` — types, defaults, parsing
-- `app/lib/image-gen-quota.server.ts` — quota math + Admin API persist
+## Open follow-ups
 
----
-
-## Pending deploy steps
-
-```bash
-# from apps/loyalty-engine/
-
-# 1. Register refunds/create webhook + upload function extension
-shopify app deploy
-
-# 2. Ship server to Fly.io
-flyctl deploy
-
-# 3. Optional: enable error monitoring
-flyctl secrets set SENTRY_DSN=<dsn-from-sentry.io>
-
-# 4. Create Managed Pricing plans in Partner Dashboard
-#    Partners → Apps → [app] → Pricing → Managed Pricing
-#    - Free plan (no charge)
-#    - Pro plan (recurring price, 14-day trial)
-#    Then: flyctl secrets set SHOPIFY_APP_HANDLE=<app-handle>
-```
-
-After deploying, configure GDPR webhook URLs in the Shopify Partner Dashboard:
-- Partners → Apps → [app] → Configuration → Privacy webhooks
-- Customer data request: `https://amadaflow-loyalty.fly.dev/webhooks/customers/data-request`
-- Customer redact: `https://amadaflow-loyalty.fly.dev/webhooks/customers/redact`
-- Shop redact: `https://amadaflow-loyalty.fly.dev/webhooks/shop/redact`
-
----
-
-## Environment variables
-
-| Var | Where set | Notes |
-|-----|-----------|-------|
-| `SHOPIFY_API_KEY` | Fly secrets | From Partners dashboard |
-| `SHOPIFY_API_SECRET` | Fly secrets | From Partners dashboard |
-| `SHOPIFY_APP_URL` | `fly.toml` / secrets | `https://amadaflow-loyalty.fly.dev` |
-| `LOYALTY_ENGINE_SHARED_SECRET` | Fly secrets + Oxygen | `openssl rand -hex 32` |
-| `DATABASE_URL` | Fly secrets | PostgreSQL (`postgresql://…`); set via `fly postgres attach` or `flyctl secrets set` |
-| `SENTRY_DSN` | Fly secrets | Optional — error monitoring |
-
-Storefront also needs `LOYALTY_ENGINE_URL` and `LOYALTY_ENGINE_SHARED_SECRET` in Oxygen environment variables.
-
----
-
-## App Store submission checklist
-
-| Item | Status |
-|------|--------|
-| Core features | Complete |
-| Auth hardening | Complete |
-| Idempotency | Complete |
-| Refund rollback | Complete |
-| GDPR handlers | Complete (handlers deployed; URLs need Partner Dashboard config) |
-| Unit tests | Complete (42 tests) |
-| Health endpoint | Complete |
-| Sentry hooks | Complete |
-| `shopify app deploy` | Pending |
-| `flyctl deploy` | Pending |
-| GDPR URLs in Partner Dashboard | Pending |
-| Privacy policy URL | Pending |
-| App listing + screenshots | Pending |
-| Billing API | Complete — Managed Pricing + soft gate (Free: 3 tiers/3 rules, Pro: unlimited). Partner Dashboard plans + `SHOPIFY_APP_HANDLE` still need to be set. |
-
----
-
-## Open follow-ups (do NOT do unless asked)
-
-1. `app.reward-programs.tsx` currently re-exports `app._index.tsx`. Intended split: move all editors to reward-programs, leave home as pure dashboard.
-2. Free-shipping redemption needs the `cart.delivery-options.discounts.generate.run` target in the function extension toml and a separate handler.
-3. Function extension test fixtures in `extensions/loyalty-discount/tests/fixtures/` are stale relative to the current GraphQL input query. Regenerate with `shopify app function fixture`.
-4. Billing API design is a separate session — required before App Store submission if the app charges merchants.
+- Live-store redeem test and customer page checks (planned 5 Nov).
+- GCP budget alert: needs a billing admin (account `0146FB-34F4D1-063771`).
+- `docs/legal/privacy-policy.md` still says we keep no shopper data in our database and mentions Fly.io. Fix it.
+- Decide whether tiers use gross or net spend.
+- Admin UI polish (the rest of piece A) and Klaviyo events (piece B).
+- Archive the old `loyaltyflow` prototype repo.
+- Storefront PR for profile card points: https://github.com/dotcross-ai/amadaflow.com/pull/21
