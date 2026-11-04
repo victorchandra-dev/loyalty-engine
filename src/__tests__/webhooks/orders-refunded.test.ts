@@ -87,8 +87,9 @@ describe('computeRefundPointsDebit', () => {
     expect(computeRefundPointsDebit({refundedAmount: 100, earnRules: [rule(null)]})).toBe(100);
   });
 
-  it('uses flat pointsValue when set', () => {
-    expect(computeRefundPointsDebit({refundedAmount: 100, earnRules: [rule(25)]})).toBe(25);
+  it('does not take back flat per-order points (each partial refund would repeat it)', () => {
+    expect(computeRefundPointsDebit({refundedAmount: 5, earnRules: [rule(200)]})).toBe(0);
+    expect(computeRefundPointsDebit({refundedAmount: 100, earnRules: [rule(null), rule(200)]})).toBe(100);
   });
 
   it('returns 0 when earn rule is inactive', () => {

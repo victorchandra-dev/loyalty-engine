@@ -50,7 +50,9 @@ export function getOrdersRefundedAmount(
 
 /**
  * Compute how many points to debit for a refunded order.
- * Mirrors `computeOrderPoints` — only `order` earn rules are reversed.
+ * Mirrors `computeOrderPoints` — only `order` earn rules are reversed, and only
+ * the per-currency-unit ones: a flat per-order amount would be taken again on
+ * every partial refund (two $5 refunds on a 200-point order took 400).
  * One-shot bonuses (signup, referral) are intentionally not reversed because
  * they were awarded for the customer relationship, not the specific order.
  */
@@ -61,5 +63,8 @@ export function computeRefundPointsDebit({
   refundedAmount: number;
   earnRules: LoyaltyEarnRuleConfig[];
 }): number {
-  return computeOrderPoints({orderAmount: refundedAmount, earnRules});
+  return computeOrderPoints({
+    orderAmount: refundedAmount,
+    earnRules: earnRules.filter((rule) => rule.pointsValue === null),
+  });
 }

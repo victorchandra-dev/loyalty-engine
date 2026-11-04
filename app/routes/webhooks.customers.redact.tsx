@@ -8,6 +8,7 @@ import {
   CUSTOMER_LOYALTY_REFERRED_BY_CREDITED_KEY,
 } from '../loyalty/constants';
 import {adminGraphql} from '../loyalty/graphql.server';
+import {prisma} from '../session-storage.server';
 import {authenticate} from '../shopify.server';
 
 const CUSTOMER_LOYALTY_KEYS = [
@@ -45,14 +46,9 @@ type RedactPayload = {
 };
 
 export const action = async ({request}: ActionFunctionArgs) => {
-  const {payload, shop, topic, session, admin} =
-    await authenticate.webhook(request);
+  const {payload, shop, topic, admin} = await authenticate.webhook(request);
 
   console.warn(`[gdpr] ${topic} for ${shop}`);
-
-  if (!session || !admin) {
-    return new Response();
-  }
 
   const p = payload as RedactPayload;
   const customerGid =
@@ -63,7 +59,20 @@ export const action = async ({request}: ActionFunctionArgs) => {
     return new Response();
   }
 
+  // Any failure returns 500 so Shopify retries; every step is safe to repeat.
   try {
+    // Our own copy first: it must go even after uninstall, when there is no admin client.
+    const {count} = await prisma.pointsEvent.deleteMany({where: {shop, customerId: customerGid}});
+    // Referrers' rows name this customer as the referee: drop that detail, keep their points.
+    await prisma.pointsEvent.updateMany({
+      where: {shop, data: {path: ['refereeId'], equals: customerGid}},
+      data: {data: {}},
+    });
+    console.warn(`[gdpr] Deleted ${count} points history row(s) for ${customerGid}`);
+
+    // App metafields are removed by Shopify on uninstall, so no admin client means nothing left.
+    if (!admin) return new Response();
+
     const result = await adminGraphql<MetafieldsDeleteData>(
       admin,
       METAFIELDS_DELETE_MUTATION,
@@ -76,16 +85,16 @@ export const action = async ({request}: ActionFunctionArgs) => {
       },
     );
 
-    const deleted = result.metafieldsDelete.deletedMetafields.map((m) => m.key);
     const errors = result.metafieldsDelete.userErrors;
-
     if (errors.length > 0) {
       console.error('[gdpr] customers/redact userErrors', errors);
-    } else {
-      console.warn(`[gdpr] Deleted metafields for ${customerGid}:`, deleted);
+      return new Response(null, {status: 500});
     }
+    const deleted = result.metafieldsDelete.deletedMetafields.map((m) => m.key);
+    console.warn(`[gdpr] Deleted metafields for ${customerGid}:`, deleted);
   } catch (error) {
     console.error('[gdpr] customers/redact failed', error);
+    return new Response(null, {status: 500});
   }
 
   return new Response();
