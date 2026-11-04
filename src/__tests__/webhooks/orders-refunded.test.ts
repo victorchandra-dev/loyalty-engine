@@ -69,6 +69,13 @@ describe('getOrdersRefundedAmount', () => {
     expect(getOrdersRefundedAmount(payload)).toBe(0);
   });
 
+  it('counts pending refunds (payment apps settle them after the webhook)', () => {
+    const payload: OrdersRefundedWebhookPayload = {
+      transactions: [{amount: '60.00', kind: 'refund', status: 'pending'}],
+    };
+    expect(getOrdersRefundedAmount(payload)).toBe(60);
+  });
+
   it('skips failed transactions', () => {
     const payload: OrdersRefundedWebhookPayload = {
       transactions: [{amount: '100.00', kind: 'refund', status: 'failure'}],

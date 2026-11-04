@@ -24,8 +24,8 @@ const REFUND = {
   transactions: [{amount: '41.94', kind: 'refund', status: 'success'}],
 };
 
-function deliver(admin: unknown) {
-  webhook.mockResolvedValueOnce({payload: REFUND, shop: 'test.myshopify.com', topic: 'REFUNDS_CREATE', session: {}, admin});
+function deliver(admin: unknown, payload: unknown = REFUND) {
+  webhook.mockResolvedValueOnce({payload, shop: 'test.myshopify.com', topic: 'REFUNDS_CREATE', session: {}, admin});
   return action({request: new Request('https://engine.test/webhooks/orders-refunded', {method: 'POST'})} as never);
 }
 
@@ -50,6 +50,14 @@ describe('refunds/create webhook', () => {
 
     expect((await deliver(shopify.admin)).status).toBe(200);
     expect(field(shopify.writes()[0], 'loyalty_points_balance', 'gid://shopify/Customer/1')).toMatchObject({value: '59', compareDigest: 'd1'});
+  });
+
+  it('takes the points back when the payment app refund is still pending', async () => {
+    const shopify = fakeAdmin(responders());
+    const pending = {...REFUND, transactions: [{amount: '41.94', kind: 'refund', status: 'pending'}]};
+
+    expect((await deliver(shopify.admin, pending)).status).toBe(200);
+    expect(field(shopify.writes()[0], 'loyalty_points_balance', 'gid://shopify/Customer/1')).toMatchObject({value: '59'});
   });
 
   it('takes the points back once when the refund is delivered twice', async () => {

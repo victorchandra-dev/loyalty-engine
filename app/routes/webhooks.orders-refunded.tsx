@@ -37,6 +37,8 @@ export const action = async ({request}: ActionFunctionArgs) => {
   const refundedAmount = getOrdersRefundedAmount(refund);
   if (!refundGid || !orderGid || refundedAmount <= 0) {
     // No money refunded (e.g. a restock-only refund): nothing to take back.
+    const statuses = (refund.transactions ?? []).map((tx) => `${tx.kind}/${tx.status}`).join(', ') || 'none';
+    console.log(`[loyalty] refunds/create ${refundGid ?? '?'}: skipped, no money refunded (transactions: ${statuses})`);
     return new Response();
   }
 
@@ -58,6 +60,7 @@ export const action = async ({request}: ActionFunctionArgs) => {
 
       const balance = Math.max(0, customer.balance - debit);
       await saveLoyaltyCustomer(admin, {program, customer, balance});
+      console.log(`[loyalty] refunds/create ${refundGid}: ${customer.id} ${customer.balance} -> ${balance} (refunded ${refundedAmount})`);
 
       if (balance !== customer.balance) {
         await recordPointsEvents(shop, [{

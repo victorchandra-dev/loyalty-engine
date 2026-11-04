@@ -32,13 +32,19 @@ export function getOrdersRefundedOrderGid(
   return payload.order_id ? `gid://shopify/Order/${payload.order_id}` : null;
 }
 
-/** Sum of the successful refund transactions in this refund. */
+/**
+ * Sum of the refund transactions in this refund that succeeded or are still
+ * pending. Payment apps (Stripe Card Payments on the live store) settle
+ * refunds after Shopify sends refunds/create, so the transaction arrives as
+ * pending; counting only 'success' skipped those refunds entirely (#1377,
+ * 4 Nov). Failed and errored refunds still count as nothing.
+ */
 export function getOrdersRefundedAmount(
   payload: OrdersRefundedWebhookPayload,
 ): number {
   let total = 0;
   for (const tx of payload.transactions ?? []) {
-    if (tx.kind === 'refund' && tx.status === 'success' && tx.amount) {
+    if (tx.kind === 'refund' && (tx.status === 'success' || tx.status === 'pending') && tx.amount) {
       const parsed = Number.parseFloat(tx.amount);
       if (Number.isFinite(parsed) && parsed > 0) {
         total += parsed;
