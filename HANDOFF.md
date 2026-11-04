@@ -1,6 +1,6 @@
 # Handoff
 
-State as of 4 Nov 2026. Live revision: `amadaflow-loyalty-00015-q29`. Overview and commands are in [README.md](README.md). History and decisions: `docs/superpowers/plans/2026-09-29-restart.md` and the other plans and specs under `docs/superpowers/`.
+State as of 4 Nov 2026. Live revision: `amadaflow-loyalty-00016-v42`. Overview and commands are in [README.md](README.md). History and decisions: `docs/superpowers/plans/2026-09-29-restart.md` and the other plans and specs under `docs/superpowers/`.
 
 ## Where things live
 
