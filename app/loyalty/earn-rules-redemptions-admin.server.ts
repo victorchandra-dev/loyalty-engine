@@ -420,6 +420,13 @@ function sanitizeEarnRuleInputs(rules: LoyaltyEarnRuleInput[]) {
         `Earn rule "${title}" must have a non-negative points value or no value at all.`,
       );
     }
+    // Blank means 1 point per $1, which only an order has; any other rule
+    // would silently pay 0 (live "Sign up" did, 4 Nov).
+    if (action !== 'order' && !(pointsValue !== null && pointsValue > 0)) {
+      throw new Error(
+        `Earn rule "${title}" needs a points value above 0. Only order rules can be left blank (1 point per $1).`,
+      );
+    }
 
     return {
       id: rule.id ?? null,
