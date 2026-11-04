@@ -415,6 +415,7 @@ const CUSTOMER_REFERRAL_ATTRIBUTION_QUERY = `#graphql
   query LoyaltyCustomerReferralAttribution($refereeId: ID!, $referrerId: ID!) {
     referee: customer(id: $refereeId) {
       id
+      numberOfOrders
       referredBy: metafield(namespace: "$app", key: "loyalty_referred_by") {
         value
       }
@@ -428,6 +429,7 @@ const CUSTOMER_REFERRAL_ATTRIBUTION_QUERY = `#graphql
 type CustomerReferralAttributionData = {
   referee: {
     id: string;
+    numberOfOrders: number | string | null;
     referredBy: {value: string | null} | null;
   } | null;
   referrer: {
@@ -455,6 +457,9 @@ export type ReferralAttribution = {
  *  - Verify both customers exist in Shopify.
  *  - Refuse if the referee already has a referred_by metafield (one-shot;
  *    first attribution wins; prevents post-signup hijacking).
+ *  - Refuse if the referee has already ordered: referrals are for new
+ *    customers, and the storefront attributes any signed-in visitor who
+ *    clicked a link.
  *  - Write the referee's loyalty_referred_by metafield as JSON.
  *
  * The actual point award fires later, on the referee's first paid order
@@ -487,6 +492,12 @@ export async function attributeReferralForCustomer({
   }
   if (!data.referrer) {
     throw new ReferralAttributionError('Referrer customer not found.', 404);
+  }
+  if (Number(data.referee.numberOfOrders ?? 0) > 0) {
+    throw new ReferralAttributionError(
+      'Referrals are for new customers; this customer has already ordered.',
+      409,
+    );
   }
   if (data.referee.referredBy?.value) {
     throw new ReferralAttributionError(
