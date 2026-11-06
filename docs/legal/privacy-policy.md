@@ -1,6 +1,6 @@
 # LoyaltyFlow — Privacy Policy
 
-**Last updated: 2026-06-03**
+**Last updated: 2026-11-06**
 
 ---
 
@@ -21,50 +21,64 @@ LoyaltyFlow requests the following Shopify Admin API access scopes. Each scope i
 
 | Scope | Purpose |
 |---|---|
-| `read_customers`, `write_customers` | Read customer profiles to look up loyalty state; write loyalty data back to customer metafields. |
+| `read_customers`, `write_customers` | Read customer profiles (including lifetime spend and order count) to work out loyalty state; write loyalty data back to customer metafields. |
 | `customer_read_customers` | Supports Customer Account API context for storefront-side loyalty lookups. |
-| `read_orders` | Read paid order data transiently in the `orders/paid` webhook to calculate points earned. Read refund data transiently in the `refunds/create` webhook to roll back points debited on returns. Order and refund records are processed in memory and are not retained. |
-| `read_discounts`, `write_discounts` | Create and manage the persistent automatic discount that the loyalty discount function uses to apply earned rewards at checkout. |
-| `read_metaobjects`, `write_metaobjects` | Read and write loyalty program configuration (tiers, earn rules, redemption options, benefits) stored as metaobjects in the merchant's Shopify store. |
+| `read_orders` | Read paid orders in the `orders/paid` webhook to calculate points earned, and refunds in the `refunds/create` webhook to take back points for refunded spend. |
+| `read_discounts`, `write_discounts` | Create and manage the automatic tier discounts (each limited to one customer segment) and the single-use discount codes customers receive when they redeem points. |
+| `read_metaobjects`, `write_metaobjects` | Read and write loyalty program configuration (tiers, earn rules, rewards, benefits) stored as metaobjects in the merchant's Shopify store. |
 | `read_metaobject_definitions`, `write_metaobject_definitions` | Create and maintain the metaobject type definitions that back the loyalty program configuration. |
 
 ---
 
 ## 3. What Data We Store and Where
 
-### 3.1 Customer Loyalty Data — Stored in Shopify (not in our database)
+### 3.1 Customer Loyalty Data — Stored in Shopify
 
-All customer-facing loyalty data is stored exclusively as **Shopify customer metafields** on the merchant's own Shopify store, under the app's private namespace (`$app`). The app never copies this data to an external database.
-
-The following five metafields are written per customer:
+A customer's current loyalty data is stored as **Shopify customer metafields** on the merchant's own Shopify store, under the app's private namespace (`$app`):
 
 | Metafield key | Contents |
 |---|---|
 | `loyalty_state` | Derived loyalty state (tier, qualification details) |
 | `loyalty_points_balance` | Current points balance (integer) |
-| `loyalty_active_redemption` | Pending redemption reserved for checkout (JSON; includes an expiry timestamp) |
-| `loyalty_referred_by` | Referral attribution payload (written once on first sign-in via a referral link) |
-| `loyalty_referred_by_credited` | Boolean flag set once the referral bonus has been awarded |
+| `loyalty_active_redemption` | The customer's unused reward code (JSON; includes an expiry timestamp) |
+| `loyalty_referred_by` | Referral attribution (which customer referred them; written once, on a signed-in visit after following a referral link) |
+| `loyalty_referred_by_credited` | Flag set once the referral bonus has been paid |
 
 ### 3.2 Shop-Level Program Configuration — Stored in Shopify
 
-Loyalty program configuration (tiers, earn rules, redemption catalog) is stored as **Shopify metaobjects** on the merchant's store. A normalized snapshot and operational flags are stored as **shop-level metafields** also on the merchant's Shopify store. None of this data is replicated to our database.
+Loyalty program configuration (tiers, earn rules, rewards) is stored as **Shopify metaobjects** on the merchant's store. A snapshot of it and operational settings are stored as **shop-level metafields**, also on the merchant's Shopify store.
 
-### 3.3 Session / Authentication Records — Stored in Our Database
+### 3.3 Our Database
 
-The app maintains a PostgreSQL database (hosted on Fly.io) solely for Shopify OAuth session management. This database stores **one record per active merchant session**, containing:
+The app runs a PostgreSQL database on Google Cloud SQL (region `asia-southeast1`, Singapore), reachable only over Google's private network. It holds three kinds of records:
+
+**Sessions (merchant data).** One record per merchant session, used to call the Shopify Admin API on the merchant's behalf:
 
 - Shopify store domain
-- OAuth access token and optional refresh token (used to call the Shopify Admin API on the merchant's behalf)
+- OAuth access token and optional refresh token
 - Session metadata: scope string, expiry timestamps, online/offline flag
-- Merchant staff user fields that Shopify provides during OAuth: `userId`, `firstName`, `lastName`, `email`, `locale`, `accountOwner`, `collaborator`, `emailVerified`
+- Merchant staff fields that Shopify provides during OAuth: `userId`, `firstName`, `lastName`, `email`, `locale`, `accountOwner`, `collaborator`, `emailVerified`
 
-This data pertains to **merchant and merchant-staff users only** — it is the Shopify-standard session record needed to authenticate API calls. No end-customer (shopper) data is stored in this database.
+**Points history (customer data).** One record per points change, so the merchant can see how a balance was reached. Each record contains:
+
+- Store domain and the customer's Shopify ID
+- Type of change (for example order points, signup bonus, referral bonus, refund, reward redeemed, manual adjustment), points, and the balance after it
+- The Shopify order ID, when the change came from an order or refund
+- Details of the change: the earn rule, the reward code, the referred customer's Shopify ID (for referral bonuses), or, for manual adjustments, the reason and the name and ID of the staff member who made it
+- The date and time
+
+Points history contains no customer names, email addresses, postal addresses or payment information.
+
+**Processed webhooks.** The topic and Shopify ID of each order or refund webhook already handled (for example `orders/paid:gid://shopify/Order/123`), so points are never awarded or taken back twice. These records hold no personal data.
 
 ### 3.4 What Is Not Stored
 
-- No shopper PII (names, email addresses, addresses, payment information) is written to our database.
-- Order and refund payloads received via webhook are processed in memory to compute a points delta and then discarded. The resulting value is written only as a metafield update in Shopify.
+- No shopper names, email addresses, postal addresses or payment information are written to our database.
+- Order and refund payloads received by webhook are processed in memory. Only the resulting points change, as described in 3.3, is kept.
+
+### 3.5 Logs
+
+The app server writes operational logs to Google Cloud Logging and errors to Google Cloud Error Reporting. Log lines can include store domains and Shopify customer, order and refund IDs. A `customers/data_request` webhook is logged with the customer's Shopify ID and email address so the request can be acted on. Logs are kept for Cloud Logging's default retention period (30 days) and are not used for any other purpose.
 
 ---
 
@@ -83,35 +97,37 @@ LoyaltyFlow uses the following sub-processors. No others.
 
 ### 5.1 Shopify Inc.
 
-All loyalty data (customer metafields, metaobjects, discounts) is stored on Shopify's platform under the merchant's Shopify store. Shopify processes this data as a data processor subject to its own [Data Processing Addendum](https://www.shopify.com/legal/dpa) and privacy policies.
+Customer metafields, metaobjects and discounts are stored on Shopify's platform under the merchant's Shopify store. Shopify processes this data as a data processor subject to its own [Data Processing Addendum](https://www.shopify.com/legal/dpa) and privacy policies.
 
-### 5.2 Fly.io
+### 5.2 Google Cloud
 
-The app's server (including the PostgreSQL session database) is hosted on [Fly.io](https://fly.io). Fly.io processes infrastructure-level data (server logs, network traffic) as a data processor. Application data in transit and at rest is encrypted over HTTPS/TLS.
-
-### 5.3 Sentry (conditional — only if enabled by the operator)
-
-If the `SENTRY_DSN` environment variable is configured on the server, unhandled application errors are reported to [Sentry](https://sentry.io) for monitoring purposes. Error reports may include contextual data such as shop domain and internal identifiers (e.g. customer GID, order GID) attached by the error handler. Sentry is **not active** unless the operator explicitly sets this variable. When not configured, no data is sent to Sentry.
+The app's server (Cloud Run), database (Cloud SQL), secrets (Secret Manager) and logs (Cloud Logging, Error Reporting) are hosted on [Google Cloud](https://cloud.google.com) in the `asia-southeast1` (Singapore) region. Google processes this data as a data processor under the [Google Cloud Data Processing Addendum](https://cloud.google.com/terms/data-processing-addendum). Data is encrypted in transit (HTTPS/TLS) and at rest.
 
 ---
 
 ## 6. Data Retention and Deletion
 
-### 6.1 Customer Loyalty Data (Shopify Metafields)
+### 6.1 Customer Redact
 
-Customer loyalty metafields live on the merchant's Shopify store. When Shopify sends a **`customers/redact`** GDPR webhook, the app immediately issues a `metafieldsDelete` mutation via the Shopify Admin API to permanently delete all five loyalty metafields for that customer (`loyalty_state`, `loyalty_points_balance`, `loyalty_active_redemption`, `loyalty_referred_by`, `loyalty_referred_by_credited`).
+When Shopify sends a **`customers/redact`** GDPR webhook, the app:
 
-### 6.2 Session Records
+- deletes all five loyalty metafields for that customer via the Shopify Admin API (`metafieldsDelete`), when the app is still installed;
+- deletes all of that customer's points history records from our database;
+- removes that customer's ID from the referral bonus records of the customer who referred them.
 
-When Shopify sends either an **`app/uninstalled`** webhook or a **`shop/redact`** GDPR webhook, the app deletes all Prisma session records for that shop from the PostgreSQL database. After deletion, the app retains no data about that merchant.
+If any step fails, the app returns an error so Shopify retries the webhook.
+
+### 6.2 Uninstall and Shop Redact
+
+When the app is uninstalled (**`app/uninstalled`** webhook), the app deletes the shop's session records. When Shopify sends the **`shop/redact`** GDPR webhook (48 hours after uninstall), the app deletes all of the shop's points history records and any remaining session records.
 
 ### 6.3 Customer Data Request
 
-When Shopify sends a **`customers/data_request`** GDPR webhook, the app logs the request for audit purposes. Because all loyalty data for the customer resides in Shopify metafields on the merchant's own store, the merchant can export it directly from their Shopify admin. The app holds no additional copy to export.
+When Shopify sends a **`customers/data_request`** GDPR webhook, the app logs the request (see 3.5). The merchant can see the customer's loyalty metafields in the Shopify admin and the customer's points history on the customer's page in the app, and send both to the customer.
 
 ### 6.4 Retention Period
 
-Session records are retained for as long as the app is installed on the merchant's store and a valid OAuth session exists. There is no separate retention timer; records are deleted on uninstall or shop redact as described above. Customer metafield data follows the retention rules of the merchant's Shopify store.
+Session records and points history are kept while the app is installed and deleted as described in 6.1 and 6.2. Processed-webhook records hold no personal data and are kept so that a repeated webhook is recognised. Customer metafield data follows the retention rules of the merchant's Shopify store.
 
 ---
 
@@ -120,7 +136,7 @@ Session records are retained for as long as the app is installed on the merchant
 End customers (shoppers) exercising data rights (access, erasure, portability) should contact the **merchant** (the store where they shop), as the merchant controls the Shopify store and is the primary data controller for customer data.
 
 Merchants can:
-- View and export a customer's loyalty data from the Shopify admin (Customer > Metafields).
+- View and export a customer's loyalty data from the Shopify admin (Customer > Metafields) and their points history from the customer's page in the app.
 - Delete a customer's loyalty data by requesting a customer redact through Shopify's privacy webhook flow, which automatically triggers the app's deletion handler described in Section 6.1.
 
 Merchants seeking to exercise their own data rights as data subjects may contact us at: <<FILL: contact email address>>
@@ -130,9 +146,10 @@ Merchants seeking to exercise their own data rights as data subjects may contact
 ## 8. Security
 
 - All communications between the app server, Shopify, and the storefront are encrypted over **HTTPS/TLS**.
-- Requests from the Hydrogen storefront to the app's API endpoints are authenticated using a **shared secret** verified with a constant-time comparison to prevent timing attacks.
+- Requests from the Hydrogen storefront to the app's API endpoints are authenticated using a **shared secret** verified with a constant-time comparison, plus a **signed customer token** so a request can only read or change the signed-in customer's own loyalty data.
 - All incoming Shopify webhooks are authenticated using **HMAC signature verification** before any payload is processed.
 - OAuth tokens stored in the session database are used only to make Shopify Admin API calls on behalf of the merchant.
+- The database has no public IP address; only the app server can reach it. Secrets are kept in Google Secret Manager.
 
 ---
 

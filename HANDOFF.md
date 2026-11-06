@@ -1,6 +1,6 @@
 # Handoff
 
-State as of 4 Nov 2026. Live revision: `amadaflow-loyalty-00016-v42`. Overview and commands are in [README.md](README.md). History and decisions: `docs/superpowers/plans/2026-09-29-restart.md` and the other plans and specs under `docs/superpowers/`.
+State as of 6 Nov 2026. Live revision: `amadaflow-loyalty-00017-dcj`. Overview and commands are in [README.md](README.md). History and decisions: `docs/superpowers/plans/2026-09-29-restart.md` and the other plans and specs under `docs/superpowers/`.
 
 ## Where things live
 
@@ -47,6 +47,8 @@ State as of 4 Nov 2026. Live revision: `amadaflow-loyalty-00016-v42`. Overview a
 
 **Warning:** `gcloud run services update-traffic --to-revisions X=100` pins traffic to revision X. Later deploys then get 0% until you run `gcloud run services update-traffic amadaflow-loyalty --to-latest` (same project and region flags). This happened on 4 Nov.
 
+**CPU throttling is off (`--no-cpu-throttling`, since 6 Nov).** Keep it off. With throttling on, a fresh min-instance gets almost no CPU until its first request, so the session storage's startup DB check times out. The library then throws "session table does not exist" (misleading) as an unhandled rejection and the container exits 1. Crashes on 29 Oct, 30 Oct and 6 Nov. `gcloud run deploy` keeps this setting.
+
 **Logs:** Cloud Logging for the service; Error Reporting for errors. Webhook lines start with `[loyalty]`.
 
 **Rollback:** list revisions with `gcloud run revisions list`, then send traffic to the good one. When fixed, deploy and run `--to-latest` to unpin. Migrations are not undone by a rollback, so keep them additive.
@@ -55,7 +57,6 @@ State as of 4 Nov 2026. Live revision: `amadaflow-loyalty-00016-v42`. Overview a
 
 - Live-store redeem test and customer page checks (planned 5 Nov).
 - GCP budget alert: needs a billing admin (account `0146FB-34F4D1-063771`).
-- `docs/legal/privacy-policy.md` still says we keep no shopper data in our database and mentions Fly.io. Fix it.
 - Decide whether tiers use gross or net spend.
 - Admin UI polish (the rest of piece A) and Klaviyo events (piece B).
 - Archive the old `loyaltyflow` prototype repo.
