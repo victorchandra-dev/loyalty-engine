@@ -18,7 +18,7 @@ State as of 6 Nov 2026. Live revision: `amadaflow-loyalty-00017-dcj`. Overview a
 
 **Redeem** (`api.redeem.tsx`): checks the customer token, creates a single-use discount code for that customer (`createRewardCode`), then takes the points. If saving the balance fails (for example a double click changed it), the code is deleted again (`deleteRewardCode`), so a reward is never free and never paid twice. One active reward at a time; it expires after 30 days.
 
-**Tier discounts** (`syncTierDiscounts` in `admin.server.ts`): one built-in automatic discount per tier, limited to that tier's customer segment. Re-synced on Sync program, Initialize, tier saves and Activate/Pause (pausing removes them). Tiers use Shopify's lifetime spend.
+**Tier discounts** (`syncTierDiscounts` in `admin.server.ts`): one built-in automatic discount per tier, limited to that tier's customer segment. Re-synced on Sync program, Initialize, tier saves and Activate/Pause (pausing removes them). Tiers use Shopify's lifetime spend, which is net of refunds (both `amountSpent` and the segment filter; checked 6 Nov).
 
 **Referral:** the storefront saves `?ref=` in an `adf_ref` cookie and calls `/api/attribute-referral` on a signed-in page load. The engine refuses customers who already have orders. Points are paid when the new customer's first order is paid. Checked end to end on the live store on 4 Nov.
 
@@ -57,7 +57,6 @@ State as of 6 Nov 2026. Live revision: `amadaflow-loyalty-00017-dcj`. Overview a
 
 - Live-store redeem test and customer page checks (planned 5 Nov).
 - GCP budget alert: needs a billing admin (account `0146FB-34F4D1-063771`).
-- Decide whether tiers use gross or net spend.
 - Admin UI polish (the rest of piece A) and Klaviyo events (piece B).
 - Archive the old `loyaltyflow` prototype repo.
 - Storefront PR for profile card points: https://github.com/dotcross-ai/amadaflow.com/pull/21

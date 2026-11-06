@@ -69,8 +69,8 @@ export type TierDiscountPlanEntry = {
  * exactly one and tier discounts never stack with each other.
  *
  * ponytail: tiers only use lifetime spend (normalizeTierEntries sets
- * `lifetime_spend`), so the query only needs `amount_spent`. Segments count
- * spend net of refunds; the engine's own tier uses Shopify's gross amountSpent.
+ * `lifetime_spend`), so the query only needs `amount_spent`. Both it and the
+ * engine's amountSpent are net of refunds (checked on the live store, 6 Nov).
  */
 export function buildTierDiscountPlan(
   program: LoyaltyProgramConfig,
